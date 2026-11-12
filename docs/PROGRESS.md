@@ -11,15 +11,15 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [x] `sources.yml` for each source with a freshness check (`dbt source freshness`)
 - [x] one `stg_` model per source table, `int_` models
 - [x] star-schema marts: >= 1 `fct_` and >= 2 `dim_`; >= 8 models in total (11 models: 2 stg, 3 int, 2 fct, 3 dim, 1 quarantine)
-- [ ] `unique` + `not_null` on every key, `relationships` between facts and dimensions, `accepted_values` on closed-list columns
-- [ ] >= 2 singular tests and >= 2 unit tests
+- [x] `unique` + `not_null` on every key, `relationships` between facts and dimensions, `accepted_values` on closed-list columns
+- [x] >= 2 singular tests and >= 2 unit tests (2 singular: unique key + reject rate; 2 unit: unknown region, duplicate dedup)
 - [x] >= 1 incremental model for the big fact table (`fct_energy_production`, proved by loading a new day and checking the exact row delta)
-- [ ] a description for every mart and every mart column; `dbt docs generate`
+- [x] a description for every mart and every mart column; `dbt docs generate`
 - [ ] one warehouse file per environment (`dev.duckdb`, `prod.duckdb`) chosen by the dbt target; CI builds on a sample in seconds
 
 ## Quality
 - [ ] a data contract per source (ODCS), with owner and retention period
-- [ ] dbt generic + singular tests, >= 2 unit tests
+- [x] dbt generic + singular tests, >= 2 unit tests
 - [x] a quarantine table (`eco2mix_rejected`)
 - [x] (bonus) Pandera validation at the ingestion entrance, refuses an unusable batch before loading (`pipeline/schema.py`, step 3)
 
@@ -79,3 +79,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | 3 | Pandera at the entrance | done | 2026-11-12 |
 | 4 | dbt project + staging | done | 2026-11-12 |
 | 5 | Rules, quarantine, marts in star | done | 2026-11-12 |
+| 6 | dbt tests + docs | done | 2026-11-12 |

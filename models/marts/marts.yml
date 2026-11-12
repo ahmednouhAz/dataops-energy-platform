@@ -1,0 +1,138 @@
+version: 2
+
+models:
+  - name: dim_region
+    description: One row per mainland France region, with the city/lat/lon used for the Open-Meteo calls.
+    columns:
+      - name: code_insee_region
+        description: INSEE region code, e.g. '75' for Nouvelle-Aquitaine. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: region_name
+        description: Region name, without accents (seeds/regions.csv was written that way to avoid CSV/encoding issues).
+        data_tests:
+          - not_null
+      - name: representative_city
+        description: The city whose coordinates stand in for the whole region in the weather calls.
+      - name: latitude
+        description: Latitude of representative_city, decimal degrees.
+      - name: longitude
+        description: Longitude of representative_city, decimal degrees.
+
+  - name: dim_energy_source
+    description: The 6 production sources eco2mix reports, with whether each counts as renewable.
+    columns:
+      - name: energy_source
+        description: Source key as it appears in the eco2mix API (thermique, nucleaire, eolien, solaire, hydraulique, bioenergies). Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: label
+        description: Human-readable English label for the source.
+        data_tests:
+          - not_null
+      - name: is_renewable
+        description: True for wind/solar/hydro/bioenergy; false for thermal and nuclear.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [true, false]
+
+  - name: dim_date
+    description: One row per calendar day spanning the eco2mix data currently loaded (grows with the backfill, step 10).
+    columns:
+      - name: date_day
+        description: The calendar day. Primary key.
+        data_tests:
+          - unique
+          - not_null
+      - name: year
+        description: Calendar year.
+      - name: month
+        description: Calendar month (1-12).
+      - name: day
+        description: Day of month.
+      - name: day_of_week
+        description: Day of week, 0 (Sunday) to 6 (Saturday), DuckDB's extract(dow ...) convention.
+      - name: is_weekend
+        description: True for Saturday/Sunday.
+
+  - name: fct_energy_production
+    description: >
+      One row per region x timestamp x energy source, in MW. The big
+      incremental fact table: only timestamps newer than what's already
+      loaded are (re)computed on each run.
+    columns:
+      - name: code_insee_region
+        description: Foreign key to dim_region.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_region')
+                field: code_insee_region
+      - name: date_heure
+        description: The half-hour (definitive dataset) or 15-minute (real-time dataset) timestamp, UTC.
+        data_tests:
+          - not_null
+      - name: energy_source
+        description: Foreign key to dim_energy_source.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_energy_source')
+                field: energy_source
+      - name: production_mw
+        description: Production from this source, in MW, for this region and timestamp.
+        data_tests:
+          - not_null
+
+  - name: fct_consumption_weather
+    description: >
+      One row per region x hour: average electricity consumption alongside
+      the weather observed for that region's representative city.
+    columns:
+      - name: code_insee_region
+        description: Foreign key to dim_region.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_region')
+                field: code_insee_region
+      - name: observed_hour
+        description: The hour, UTC. eco2mix's finer-grained consumption is averaged up to this grain.
+        data_tests:
+          - not_null
+      - name: consommation_mw_avg
+        description: Average electricity consumption in MW over this region/hour.
+        data_tests:
+          - not_null
+      - name: temperature_c
+        description: Hourly temperature in Celsius, from Open-Meteo, for this region's representative city.
+      - name: wind_speed_kmh
+        description: Hourly wind speed in km/h.
+      - name: cloud_cover_pct
+        description: Hourly cloud cover, percent.
+
+  - name: eco2mix_rejected
+    description: >
+      Quarantine: every row int_eco2mix_checked flagged, with its reason.
+      Nothing here reaches fct_energy_production or fct_consumption_weather.
+    columns:
+      - name: reject_reason
+        description: Why the row was rejected. See int_eco2mix_checked.sql for the rule order.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - missing_region
+                  - unknown_region
+                  - invalid_timestamp
+                  - missing_consumption
+                  - negative_consumption
+                  - duplicate_region_datetime

@@ -338,14 +338,15 @@ Each step ends with: the verification passed → answers to the questions in `do
 ## 9. Current status (UPDATE AT THE END OF EVERY SESSION)
 
 - **Date of last update:** 2026-11-12
-- **Current step:** 5 — rules, quarantine, marts in star — **done**. Next: step 6, dbt tests + docs.
-- **Steps 0-5 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
+- **Current step:** 6 — dbt tests + docs — **done**. Next: step 7, pytest + data contracts.
+- **Steps 0-6 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
   - 0: local setup (Python 3.12 + 3.14, Docker, repo cloned, `.gitignore` fixed to exclude `course/`/`.claude/`).
   - 1: explored both APIs; confirmed real-time dataset id `eco2mix-regional-tr`; found it doesn't share eco2mix-cons-def's schema; corrected a wrong "Open-Meteo lags a few days" assumption (ADR 0002).
   - 2: dlt ingestion for both sources into `raw` in `dev.duckdb`, merge write disposition; idempotency proved (`pipeline/`, `query.py`).
   - 3: Pandera validates each batch before loading (`pipeline/schema.py`); a bad batch is refused with exit 1, nothing loaded.
   - 4: dbt project at repo root (`dbt_project.yml`/`profiles.yml`, dev/prod/ci targets); `sources.yml` with `dbt source freshness` (both PASS); `stg_eco2mix_regional`/`stg_weather_hourly`; `regions` seed. Fixed two bugs: `.gitignore` still assumed a `dbt/` subfolder, and the seed's `code_insee_region` was `int32` vs `varchar` everywhere else.
   - 5: `int_eco2mix_checked` (5 reject rules), `int_energy_production_unpivoted`, `int_consumption_hourly`; marts `dim_region`/`dim_energy_source`/`dim_date`/`fct_energy_production` (incremental, proved by hand-reconciling row counts after loading a new day)/`fct_consumption_weather`/`eco2mix_rejected` (quarantine); `energy_sources` seed. 11 models total. Found a real data-quality fact, not a bug: the real-time dataset's freshest ~7 hours arrive with every measurement null (ADR 0002 addendum) — correctly quarantined, flagged for step 12's re-ingestion policy.
+  - 6: generic tests on every mart (`unique`/`not_null`/`relationships`/`accepted_values`), 2 singular tests (composite unique key, reject-rate guard), 2 dbt unit tests on `int_eco2mix_checked`, descriptions on every mart/column, `dbt docs generate`. `dbt build`: `PASS=39`. Proved the "stop the chain" behavior for real by deliberately breaking a rule and watching 6 models + 10 tests get `SKIP`ped. Found that dbt unit tests need every `ref()` mocked, including seeds — not just the one input you're overriding.
 - **Open issues:** devcontainer doesn't build in Codespaces (see §2) → fix before using the laptop at uni.
 - **Next class session:** [FILL IN]
 - **Project deadline / defense date:** [FILL IN]
