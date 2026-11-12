@@ -1,4 +1,4 @@
-code_insee_region,libelle_region,nature,date,heure,date_heure,consommation,thermique,nucleaire,eolien,solaire,hydraulique,pompage,bioenergies,ech_physiques,stockage_batterie,destockage_batterie
+code_insee_region,libelle_region,nature,date,heure,date_heure,consumption,thermique,nucleaire,eolien,solaire,hydraulique,pompage,bioenergies,ech_physiques,stockage_batterie,destockage_batterie
 75,Nouvelle-Aquitaine,Donnees definitives,2026-01-01,00:00,2026-01-01T00:00:00+00:00,1000,100,500,100,50,100,0,50,0,0,0
 75,Nouvelle-Aquitaine,Donnees definitives,2026-01-01,00:30,2026-01-01T00:30:00+00:00,1000,100,500,100,50,100,0,50,0,0,0
 75,Nouvelle-Aquitaine,Donnees definitives,2026-01-01,01:00,2026-01-01T01:00:00+00:00,1000,100,500,100,50,100,0,50,0,0,0
