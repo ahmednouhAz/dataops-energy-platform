@@ -226,3 +226,9 @@ dbt/target/
 dbt/logs/
 dbt/dbt_packages/
 .dlt/secrets.toml
+
+# Teacher's course material: not ours to publish (see CLAUDE.md section 3)
+course/
+
+# Claude Code local settings (machine-specific tool permissions)
+.claude/
