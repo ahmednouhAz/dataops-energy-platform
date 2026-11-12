@@ -249,3 +249,57 @@ warehouse. dbt's tests run *inside* the warehouse, row by row, every time
 consumption value in an otherwise fine batch sails through Pandera's
 "95% plausible" check -- it is exactly the kind of thing the row-level
 `int_eco2mix_checked` quarantine rule (step 5) exists to catch.
+
+---
+
+## Step 4 — dbt project + staging (2026-11-12)
+
+### What was done
+- `dbt_project.yml` and `profiles.yml` at the repo root (TP3 convention, not
+  under a `dbt/` subfolder). Profile `energy_platform` has three targets --
+  `dev` (`dev.duckdb`), `prod` (`prod.duckdb`), `ci` (`ci.duckdb`) -- so the
+  warehouse file is chosen by `--target`, never hard-coded in a model.
+- **Found and fixed a second gitignore bug** (after the `course/`/`.claude/`
+  one in step 0): the existing rules ignored `dbt/target/`, `dbt/logs/`,
+  `dbt/dbt_packages/`, assuming a `dbt/` subfolder that doesn't exist in our
+  layout. Fixed to the root-level `target/`, `logs/`, `dbt_packages/` that
+  dbt actually creates here.
+- `models/sources.yml`: both raw tables declared with `dbt source freshness`
+  (`warn_after: 2 days`, `error_after: 5 days`), using the business timestamp
+  (`date_heure`, `time`) as `loaded_at_field` rather than dlt's own load
+  timestamp -- we care whether the *data* is stale, not just whether the
+  script ran recently. Ran `dbt source freshness`: both PASS, with
+  `max_loaded_at` correctly reflecting the newest row in each table.
+- `models/staging/stg_eco2mix_regional.sql` and `stg_weather_hourly.sql`:
+  `try_cast` every measurement column to its real numeric type, no row
+  removed. Verified `stg_eco2mix_regional.consommation_mw` ranges from 1387
+  to 10425 (plausible French regional consumption in MW).
+- **Found and fixed a real type mismatch**: `seeds/regions.csv`'s
+  `code_insee_region` loaded as `int32` by `dbt seed`'s default CSV type
+  inference (the column looks numeric), while every eco2mix/weather table
+  has it as `varchar` (`'75'`, not `75`). Left alone, joining the seed to
+  either staging model in step 5 would compare varchar to int. Fixed with a
+  `+column_types: {code_insee_region: varchar}` override in `dbt_project.yml`
+  under `seeds:`.
+- `dbt run` builds both staging views: `Done. PASS=2 WARN=0 ERROR=0 SKIP=0`.
+  `dbt seed` loads the 12 regions: `Done. PASS=1 ... TOTAL=1`.
+
+### Why this matters for the four promises
+- **Reproductible**: anyone cloning the repo gets the same `dev`/`prod`/`ci`
+  split without editing a model -- `--target` is the only thing that changes.
+- **Observable**: `dbt source freshness` is the mechanism the written SLO
+  (step 13) will actually be measured against; wiring it to the business
+  timestamp now means the number it reports is the one that matters.
+
+### A question the individual exam could ask, answered here
+**"Someone runs `dbt run` from a sub-folder instead of the repo root. What
+happens, and how do you fix it?"** dbt looks for `dbt_project.yml` (and,
+since it's not in `~/.dbt/`, `profiles.yml` via `DBT_PROFILES_DIR`) relative
+to the current directory; from a subfolder it won't find either and fails
+with `Could not find profile named 'energy_platform'` (or a "no
+dbt_project.yml found" error even earlier). The fix is always the same:
+`cd` back to the repo root before running dbt -- there's no flag that
+replaces this, because dbt's whole project-discovery model assumes you run
+it from there. This is exactly TP3's own troubleshooting note, we just hit
+the version of it where `profiles.yml` isn't even in the default
+`~/.dbt/` location, so the error shows up one step earlier.

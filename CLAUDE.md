@@ -337,8 +337,13 @@ Each step ends with: the verification passed → answers to the questions in `do
 ## 9. Current status (UPDATE AT THE END OF EVERY SESSION)
 
 - **Date of last update:** 2026-11-12
-- **Current step:** 3 — Pandera at the entrance — **done**. Next: step 4, dbt project + staging.
-- **Done:** GitHub repo `ahmednouhAz/dataops-energy-platform`; PR #1 merged (skeleton, `requirements.txt`, `docs/business_questions.md`, ADR 0001); both APIs answered correctly with curl. PR #2 merged (step 0: Python 3.12 installed alongside 3.14, `.venv` created and `requirements.txt` installed, Docker Desktop confirmed running, this folder turned into the real clone of the repo, `.gitignore` fixed to actually exclude `course/` and `.claude/`, `docs/PROGRESS.md` and `docs/learning_log.md` created). PR #3/#4 merged (small docs fixes). Step 1 merged (`scripts/explore_eco2mix.py`, `scripts/explore_weather.py`, `seeds/regions.csv`, ADR 0002): confirmed the real-time dataset id `eco2mix-regional-tr` and found its schema differs from the definitive dataset's; corrected the wrong "archive lags a few days" assumption about Open-Meteo. Step 2 merged (`pipeline/sources/eco2mix.py`, `pipeline/sources/weather.py`, `pipeline/ingest.py`, `query.py`): dlt loads both sources into `raw` in `dev.duckdb` with `write_disposition="merge"`; idempotency proved by running the same date range twice and getting identical row counts (2304 / 864) with zero duplicate keys. Step 3 merged (`pipeline/schema.py`): Pandera validates each batch before loading (strict=False for eco2mix since its two datasets have genuinely different optional columns, strict=True for weather); a batch with an unknown region code or an unexpected weather column is refused with exit 1 and nothing loaded.
+- **Current step:** 4 — dbt project + staging — **done**. Next: step 5, rules/quarantine/marts.
+- **Steps 0-4 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
+  - 0: local setup (Python 3.12 + 3.14, Docker, repo cloned, `.gitignore` fixed to exclude `course/`/`.claude/`).
+  - 1: explored both APIs; confirmed real-time dataset id `eco2mix-regional-tr`; found it doesn't share eco2mix-cons-def's schema; corrected a wrong "Open-Meteo lags a few days" assumption (ADR 0002).
+  - 2: dlt ingestion for both sources into `raw` in `dev.duckdb`, merge write disposition; idempotency proved (`pipeline/`, `query.py`).
+  - 3: Pandera validates each batch before loading (`pipeline/schema.py`); a bad batch is refused with exit 1, nothing loaded.
+  - 4: dbt project at repo root (`dbt_project.yml`/`profiles.yml`, dev/prod/ci targets); `sources.yml` with `dbt source freshness` (both PASS); `stg_eco2mix_regional`/`stg_weather_hourly`; `regions` seed. Fixed two bugs: `.gitignore` still assumed a `dbt/` subfolder, and the seed's `code_insee_region` was `int32` vs `varchar` everywhere else.
 - **Open issues:** devcontainer doesn't build in Codespaces (see §2) → fix before using the laptop at uni.
 - **Next class session:** [FILL IN]
 - **Project deadline / defense date:** [FILL IN]

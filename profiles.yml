@@ -1,0 +1,15 @@
+energy_platform:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: dev.duckdb
+      threads: 4
+    prod:
+      type: duckdb
+      path: prod.duckdb
+      threads: 4
+    ci:
+      type: duckdb
+      path: ci.duckdb
+      threads: 4

@@ -1,0 +1,26 @@
+name: energy_platform
+version: "1.0"
+profile: energy_platform
+
+model-paths: ["models"]
+test-paths: ["data_tests"]
+seed-paths: ["seeds"]
+
+models:
+  energy_platform:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  energy_platform:
+    regions:
+      # Every eco2mix/weather table has code_insee_region as text ('11',
+      # '75'...). The seed's CSV parser infers int by default since the
+      # column looks numeric; override it so joins in step 5 don't have to
+      # compare varchar to int.
+      +column_types:
+        code_insee_region: varchar
