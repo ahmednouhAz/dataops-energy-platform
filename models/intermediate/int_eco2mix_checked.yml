@@ -1,0 +1,34 @@
+version: 2
+
+unit_tests:
+  - name: test_unknown_region_is_rejected
+    description: A region code that isn't in the regions seed is rejected; a known region isn't.
+    model: int_eco2mix_checked
+    given:
+      - input: ref('stg_eco2mix_regional')
+        rows:
+          - { code_insee_region: "99", date_heure: "2026-01-01T00:00:00+00:00", consommation_mw: 1000, _dlt_load_id: "1" }
+          - { code_insee_region: "75", date_heure: "2026-01-01T00:00:00+00:00", consommation_mw: 2000, _dlt_load_id: "1" }
+      - input: ref('regions')
+        rows:
+          - { code_insee_region: "75", region_name: Nouvelle-Aquitaine }
+    expect:
+      rows:
+        - { code_insee_region: "99", reject_reason: unknown_region }
+        - { code_insee_region: "75", reject_reason: null }
+
+  - name: test_duplicate_region_datetime_keeps_latest_load
+    description: Two rows for the same region and timestamp -- the one from the most recent dlt load is kept, the older one is rejected.
+    model: int_eco2mix_checked
+    given:
+      - input: ref('stg_eco2mix_regional')
+        rows:
+          - { code_insee_region: "75", date_heure: "2026-01-01T00:00:00+00:00", consommation_mw: 1000, _dlt_load_id: "1" }
+          - { code_insee_region: "75", date_heure: "2026-01-01T00:00:00+00:00", consommation_mw: 1500, _dlt_load_id: "2" }
+      - input: ref('regions')
+        rows:
+          - { code_insee_region: "75", region_name: Nouvelle-Aquitaine }
+    expect:
+      rows:
+        - { _dlt_load_id: "1", reject_reason: duplicate_region_datetime }
+        - { _dlt_load_id: "2", reject_reason: null }

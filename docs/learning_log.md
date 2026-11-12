@@ -382,3 +382,70 @@ avoid. Averaging is explicit about what happened to the data, and it's the
 right aggregation for a quantity like power (MW) where the hourly figure we
 actually want to compare against temperature is "how much was being drawn
 on average that hour", not an arbitrary instant.
+
+---
+
+## Step 6 — dbt tests + docs (2026-11-12)
+
+### What was done
+- `models/marts/marts.yml`: generic tests on every mart -- `unique`/`not_null`
+  on every primary key, `relationships` from both fact tables back to
+  `dim_region` (and `fct_energy_production` to `dim_energy_source`), and
+  `accepted_values` on two closed-list columns (`dim_energy_source.is_renewable`,
+  `eco2mix_rejected.reject_reason`, listing the exact 6 reasons the model can
+  produce -- this doubles as living documentation of the rule set). A
+  description on every mart and every mart column.
+- `data_tests/assert_fct_energy_production_unique_key.sql`: the built-in
+  `unique` test only takes one column, but the fact table's real key is 3
+  columns together, so this is a singular test (a `group by ... having
+  count(*) > 1`, TP3 pattern).
+- `data_tests/assert_reject_rate_below_20_percent.sql`: TP3's `check_reject_rate`
+  translated to SQL, with a documented caveat -- the real-time dataset's
+  freshest hours always show a temporary null spike (step 5's finding), so
+  20% has to be wide enough to absorb one partial day's normal 9.8% without
+  masking a real problem.
+- `models/intermediate/int_eco2mix_checked.yml`: 2 dbt unit tests,
+  `test_unknown_region_is_rejected` and
+  `test_duplicate_region_datetime_keeps_latest_load`, following TP3's
+  given/when/then shape exactly.
+- `dbt docs generate`: builds cleanly; spot-checked `target/manifest.json`
+  directly to confirm `fct_energy_production`'s `depends_on` correctly chains
+  back through `int_energy_production_unpivoted`. (Didn't run `dbt docs serve`
+  interactively in this session -- no browser attached -- but the artifact
+  generation itself is the part that can actually fail, and it didn't.)
+- `dbt build`: `Done. PASS=39 WARN=0 ERROR=0 SKIP=0` (11 models, 2 seeds, 24
+  data tests, 2 unit tests).
+
+### A real gotcha: unit tests need every ref() mocked, including seeds
+First attempt at the unit tests failed to even compile:
+`Unit_Test '...' depends on a node named 'regions' which was not found`.
+`int_eco2mix_checked` references `{{ ref('regions') }}` (the seed) inside its
+`unknown_region` check, and only `stg_eco2mix_regional` was given mock rows
+in `given`. Unlike a plain `ref()` to a model that isn't being overridden
+(which can fall back to the model's real build), **a `ref()` to a seed
+inside a unit-tested model must also be given mock rows explicitly** -- it
+doesn't fall back to the actual seed data in this dbt/dbt-duckdb version.
+Fixed by adding a second `given.input: ref('regions')` with just the one row
+(`'75'`) each test actually needs. This matters for *writing* correct unit
+tests on any model that reads a seed, not just this one.
+
+### Proved `dbt build` actually stops the chain (TP3's "Essayez" exercise, for real)
+Temporarily deleted the `unknown_region` rule from `int_eco2mix_checked.sql`
+and ran `dbt build`: `test_unknown_region_is_rejected` failed immediately
+with a readable diff (`99,unknown_region→NULL`), and dbt `SKIP`ped every
+downstream node -- `dim_date`, `eco2mix_rejected`,
+`int_energy_production_unpivoted`, both fact tables, and all their tests (6
+models + 10 tests skipped, exit code 1). Restored the rule, reran:
+`PASS=39` again. This is the concrete mechanism behind "a red PR can't be
+merged" (step 8): the failure is specific and immediate, not a vague
+"something broke somewhere in 11 models".
+
+### A question the individual exam could ask, answered here
+**"Why does `eco2mix_rejected.reject_reason` get an `accepted_values` test
+instead of just `not_null`?"** `not_null` alone would pass even if a typo
+crept into one of the `case when` branches (e.g. `'uknown_region'`) -- it
+only checks that *something* is there, not that it's one of the 6 reasons
+the rule file can actually produce. `accepted_values` makes the YAML and the
+SQL cross-check each other: if someone edits one list of reasons and forgets
+the other, the test fails the next `dbt build`, not months later when a
+dashboard filter silently stops matching a misspelled reason.
