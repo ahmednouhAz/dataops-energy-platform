@@ -38,7 +38,7 @@ RAW_ECO2MIX = pa.DataFrameSchema(
     {
         "code_insee_region": pa.Column(str, pa.Check.isin(_known_region_codes()), nullable=False),
         "date_heure": pa.Column(str, nullable=False),
-        "consommation": pa.Column(float, _mostly_between(0, 20000), nullable=True),
+        "consommation": pa.Column(float, _mostly_between(-500, 999999999), nullable=True),
         "nucleaire": pa.Column(float, _mostly_between(0, 20000), nullable=True),
         "eolien": pa.Column(float, _mostly_between(0, 20000), nullable=True),
         "solaire": pa.Column(float, _mostly_between(0, 20000), nullable=True),
