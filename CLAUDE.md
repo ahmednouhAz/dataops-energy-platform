@@ -248,11 +248,12 @@ Then on GitHub: open the PR (with a short description: what, why, how I tested) 
    - **API limits to design around:** the `/records` endpoint is paginated (max 100 per page, offset + limit capped around 10,000). For the bulk backfill use the **`/exports/{format}`** endpoint (CSV/JSON/Parquet, no pagination cap) with a `where` filter on `date_heure` (e.g. one month or one day at a time) — **not yet tested, do this in step 2 (ingestion)**.
 2. **Open-Meteo** — archive API `https://archive-api.open-meteo.com/v1/archive` (no key, free for non-commercial use; daily call limit to respect). Hourly `temperature_2m` (+ e.g. `wind_speed_10m`, `shortwave_radiation`, `cloud_cover`). One representative point per region (seed file `seeds/regions.csv`, created in step 1: `code_insee_region`, `region_name`, `city`, `latitude`, `longitude`, all 12 mainland regions). **Correction (verified 2026-11-12, see ADR 0002): the archive does NOT lag a few days** — it answers up to and including today with zero nulls (requesting tomorrow gives an explicit 400 "out of allowed range"). The real risk is **accuracy, not completeness**: per Open-Meteo's own docs, the last few days are filled from a forecast-model blend before being replaced by the final ERA5 reanalysis, so a value fetched today for "yesterday" could later be silently revised. No special handling planned for this yet (not required by the brief); just documented so it isn't a surprise at the Game Day.
 
-### Grain and model sketch (to refine with me, step by step)
-- `raw.eco2mix_regional`, `raw.weather_hourly` — loaded by dlt, untouched.
-- `stg_eco2mix_regional` (types, `eolien` cast, junk column dropped, timestamps in UTC), `stg_weather_hourly`.
-- `int_eco2mix_checked` (rules → `reject_reason`: missing region, invalid timestamp, negative consumption, duplicate region × timestamp, unknown region…), `int_energy_production_unpivoted` (one row per region × timestamp × energy source), `int_weather_by_region_hour`.
-- Marts (star): `fct_energy_production` (region × half-hour × source, MW — **incremental**, the big table: ~2.9 M × ~8 sources ≈ 20 M rows), `fct_consumption_weather` (region × hour: consumption + temperature), `dim_region`, `dim_energy_source` (with `is_renewable` — `accepted_values` test), `dim_date`, `eco2mix_rejected` (quarantine), + small report marts for the 3 business questions.
+### Grain and model sketch (built in steps 4-5; see docs/learning_log.md for the exact reasoning)
+- `raw.eco2mix_regional`, `raw.weather_hourly` — loaded by dlt, untouched (measurement columns forced to text, see ADR 0002).
+- `stg_eco2mix_regional` (try_cast every measurement column to double, no row dropped), `stg_weather_hourly` (same).
+- `int_eco2mix_checked` (reject_reason, first match wins: missing_region, unknown_region, invalid_timestamp, missing_consumption, negative_consumption, duplicate_region_datetime), `int_energy_production_unpivoted` (one row per region × timestamp × energy source, 6 sources, clean rows only), `int_consumption_hourly` (eco2mix's 15/30-min consumption averaged up to the hour, to match weather's grain).
+- Marts (star): `fct_energy_production` (region × timestamp × source, MW — **incremental**, keyed on region+timestamp+source), `fct_consumption_weather` (region × hour: consumption + temperature, joins `int_consumption_hourly` to `stg_weather_hourly`), `dim_region`, `dim_energy_source` (with `is_renewable`, from the `energy_sources` seed), `dim_date` (built with `generate_series` bounded by the actual data, not hard-coded), `eco2mix_rejected` (quarantine). No separate "report marts" yet — the 3 business questions are answerable directly from this star schema; revisit only if the dashboard tool (step 14) actually needs one.
+- **Known data-quality fact, not a bug** (ADR 0002 addendum): the real-time dataset's freshest ~7 hours arrive with every measurement column null, filled in later. `int_eco2mix_checked` quarantines these correctly today, but step 12's orchestration must re-ingest a short trailing window each run (not just strictly new dates) so the eventual real values get upserted instead of being quarantined forever.
 - dlt loading: `write_disposition="merge"` with `primary_key=("code_insee_region", "date_heure")` (and region + time for weather) → **idempotent**: running twice, or re-running a backfill day, never creates duplicates. Date parameters `start_date` / `end_date` for backfill.
 
 ### Important technical constraints to teach me
@@ -337,13 +338,14 @@ Each step ends with: the verification passed → answers to the questions in `do
 ## 9. Current status (UPDATE AT THE END OF EVERY SESSION)
 
 - **Date of last update:** 2026-11-12
-- **Current step:** 4 — dbt project + staging — **done**. Next: step 5, rules/quarantine/marts.
-- **Steps 0-4 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
+- **Current step:** 5 — rules, quarantine, marts in star — **done**. Next: step 6, dbt tests + docs.
+- **Steps 0-5 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
   - 0: local setup (Python 3.12 + 3.14, Docker, repo cloned, `.gitignore` fixed to exclude `course/`/`.claude/`).
   - 1: explored both APIs; confirmed real-time dataset id `eco2mix-regional-tr`; found it doesn't share eco2mix-cons-def's schema; corrected a wrong "Open-Meteo lags a few days" assumption (ADR 0002).
   - 2: dlt ingestion for both sources into `raw` in `dev.duckdb`, merge write disposition; idempotency proved (`pipeline/`, `query.py`).
   - 3: Pandera validates each batch before loading (`pipeline/schema.py`); a bad batch is refused with exit 1, nothing loaded.
   - 4: dbt project at repo root (`dbt_project.yml`/`profiles.yml`, dev/prod/ci targets); `sources.yml` with `dbt source freshness` (both PASS); `stg_eco2mix_regional`/`stg_weather_hourly`; `regions` seed. Fixed two bugs: `.gitignore` still assumed a `dbt/` subfolder, and the seed's `code_insee_region` was `int32` vs `varchar` everywhere else.
+  - 5: `int_eco2mix_checked` (5 reject rules), `int_energy_production_unpivoted`, `int_consumption_hourly`; marts `dim_region`/`dim_energy_source`/`dim_date`/`fct_energy_production` (incremental, proved by hand-reconciling row counts after loading a new day)/`fct_consumption_weather`/`eco2mix_rejected` (quarantine); `energy_sources` seed. 11 models total. Found a real data-quality fact, not a bug: the real-time dataset's freshest ~7 hours arrive with every measurement null (ADR 0002 addendum) — correctly quarantined, flagged for step 12's re-ingestion policy.
 - **Open issues:** devcontainer doesn't build in Codespaces (see §2) → fix before using the laptop at uni.
 - **Next class session:** [FILL IN]
 - **Project deadline / defense date:** [FILL IN]

@@ -1,0 +1,7 @@
+energy_source,label,is_renewable
+thermique,Thermal (fossil fuels),false
+nucleaire,Nuclear,false
+eolien,Wind,true
+solaire,Solar,true
+hydraulique,Hydropower,true
+bioenergies,Bioenergy,true
