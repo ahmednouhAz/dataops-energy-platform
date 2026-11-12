@@ -735,3 +735,98 @@ mean "today's result must match whatever a differently-built pipeline
 produced yesterday." Catching the mismatch required comparing counts
 before/after a re-run, which is exactly why that proof is part of this
 step's deliverable.
+
+## Step 11 — Docker Compose (2026-11-12)
+
+### What was done
+- `Dockerfile`: `python:3.12.7-slim-bookworm` + `git` (dbt shells out to it
+  even with zero packages installed -- `dbt debug` reported it as a failed
+  check without this) + `requirements.txt`. Stays alive with `sleep
+  infinity` -- no long-running process exists yet, Prefect flows are step
+  12 -- so it can be `docker compose exec`'d into.
+- `docker-compose.yml`: `minio` (object storage), `minio-setup` (one-shot
+  bucket creation, exits), `prefect-server` (server only, no flows
+  registered yet), `worker` (our image, bind-mounts the real repo over
+  `/app` so it always runs today's code against the host's own
+  `dev.duckdb`, no rebuild needed to pick up a code change).
+- `.env.example` (MinIO credentials, `DUCKDB_PATH`, `PREFECT_API_URL`),
+  `.env` gitignored (already was).
+- Migrated DVC's `storage` remote from the local-folder stand-in (ADR
+  0003) to this MinIO instance.
+
+### A real problem CLAUDE.md's plan couldn't have anticipated: the free MinIO image is gone
+`docker pull minio/minio` -- the standard choice in every MinIO tutorial,
+including the one this course's materials assumed -- returns `pull access
+denied`. Checked both Docker Hub and its `quay.io` mirror directly (not
+just read about it): both refuse the pull. MinIO stopped publishing the
+free Community Edition container image to either registry on 2025-10-23.
+Found a working free alternative, **Chainguard's `cgr.dev/chainguard/minio`**,
+and verified it directly before committing to it:
+- Only ships a `latest` tag on the free tier -- no versioned tags to pin
+  to, which looks like it breaks "pin image versions." Pinned by **digest**
+  instead (`@sha256:...`), which is actually a *stronger* guarantee than a
+  version tag (a tag can be moved to a different build later; a digest
+  never can).
+- Minimal image, no `curl`/`wget` for the usual healthcheck pattern. Used
+  bash's `/dev/tcp` pseudo-device (`exec 3<>/dev/tcp/localhost/9000`) to
+  open a raw TCP check with no extra binary -- tested directly against the
+  image first, not assumed to work.
+- Bundles `mc` (the MinIO client), so `minio-setup` reuses the same image
+  with a different entrypoint instead of needing a second image pull
+  (`minio/mc` also disappeared the same way).
+- Runs as a non-root user (UID 65532) -- a named Docker volume for `/data`
+  avoids the file-permission problem a bind-mounted host folder would hit,
+  because Docker initializes a fresh named volume's ownership from the
+  image itself.
+- See `docs/adr/0005-docker-compose.md` for the full record, including
+  the alternatives checked and rejected (`bitnami/minio` also lost its
+  free maintained tags, for the same underlying reason, around the same
+  time).
+
+### A quirk found, deliberately not "fixed"
+`ruff check .` run inside the worker container reports 20 `EXE002` errors
+("executable but no shebang") that never show up on the host or in CI.
+Cause: Docker Desktop's Windows bind-mount translation marks every file
+executable (NTFS has no POSIX exec bit to translate from), which a real
+Linux git checkout -- including GitHub Actions' -- never does, since mode
+bits there come from git's own index. Left the rule alone rather than
+relaxing it for everyone just to paper over a Windows-specific
+side-effect: lint still runs on the host/CI, where it's accurate; the
+container is for running the actual pipeline/dbt/pytest, not for linting.
+
+### Verification
+- `docker compose up -d --build`: `minio` reports `(healthy)`,
+  `minio-setup` exits 0 with `Bucket created successfully`,
+  `prefect-server` and `worker` both `Up`.
+- `docker compose exec worker python -m pytest -q`: 15 passed.
+- `docker compose exec worker dbt debug`: all checks passed.
+- `docker compose exec worker dbt build --select dim_region`: PASS=6,
+  against the exact same `dev.duckdb` the host's own `dbt build` uses --
+  proves the bind mount, not a second copy of the warehouse.
+- From inside `worker`, `http://prefect-server:4200/api/health` → HTTP 200.
+- DVC/MinIO migration: `dvc push`, then deleted `data/reference/` *and*
+  `.dvc/cache`, `dvc pull` restored both files with their exact original
+  line counts (8065 and 2017, header included) -- same recovery proof as
+  step 9, now against the real remote instead of the local-folder
+  stand-in.
+
+### Why this matters for the four promises
+- **Reproductible**: `git clone` + `docker compose up` + `docker compose
+  exec worker pytest`/`dbt build` now needs nothing installed on the host
+  except Docker itself -- proved by actually running the test suite and a
+  dbt model from inside the container, not just by the containers reporting
+  "Up."
+- **Automatic**: step 12 (Prefect flows) now has a server to register
+  against; this step is deliberately "the plumbing," not the automation
+  itself.
+
+### A question the individual exam could ask, answered here
+**"Why pin a Docker image by digest instead of a version tag?"** Normally
+you'd pin a tag (`minio:RELEASE.2024-...`) because it's human-readable and
+"usually" stable. Here the *only* free tag available is `latest`, which by
+definition can point to a different build tomorrow -- the opposite of
+reproducible. A digest (`@sha256:...`) is the hash of the actual image
+content: it is physically impossible for it to resolve to a different
+build later, even if `latest` moves on. It's less readable, but strictly
+more reproducible, which is the property that actually matters for "my
+platform builds the same way every time."

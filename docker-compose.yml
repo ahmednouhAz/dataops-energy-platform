@@ -1,0 +1,81 @@
+# Starts the whole local platform with one command: docker compose up -d.
+# See docs/adr/0005-docker-compose.md for why these specific images and
+# this health-check approach (the official free MinIO image stopped being
+# publishable in October 2025 -- found empirically while writing this file,
+# not something the course material could have anticipated).
+services:
+  minio:
+    # Pinned by digest, not a tag: the free Chainguard build only ships
+    # "latest", so a digest is the only way to still get a reproducible,
+    # non-moving reference (see ADR 0005).
+    image: cgr.dev/chainguard/minio@sha256:786cb11d340b1a657de8dc899560e36e1d1fb371d3d6f3eb6c903a0bb0cec714
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      # No curl/wget in this minimal image -- bash's /dev/tcp pseudo-device
+      # opens a raw TCP connection with no extra binary needed.
+      test: ["CMD", "/bin/bash", "-c", "exec 3<>/dev/tcp/localhost/9000"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # One-shot job: creates the bucket DVC's remote pushes to (ADR 0005),
+  # then exits. Reuses the minio image instead of pulling a separate `mc`
+  # image, since mc is already bundled inside it.
+  minio-setup:
+    image: cgr.dev/chainguard/minio@sha256:786cb11d340b1a657de8dc899560e36e1d1fb371d3d6f3eb6c903a0bb0cec714
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - >-
+        mc alias set localminio http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" &&
+        mc mb --ignore-existing localminio/dvc-storage
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+
+  prefect-server:
+    # No flows run against this yet (step 12 wires up the actual daily/
+    # backfill flows); started here so the worker's PREFECT_API_URL already
+    # points somewhere real.
+    image: prefecthq/prefect:3.1.11-python3.12
+    command: ["prefect", "server", "start", "--host", "0.0.0.0"]
+    ports:
+      - "4200:4200"
+    volumes:
+      - prefect-data:/root/.prefect
+
+  worker:
+    build: .
+    # Bind-mounting the real repo over the image's own /app means the
+    # container always runs today's code, not whatever was baked in at
+    # `docker compose build` time -- the same live-edit convenience as
+    # running locally, but now reproducible for a newcomer with no local
+    # Python setup at all. The Dockerfile's own COPY still matters for the
+    # image published to GHCR in step 15, which has no such bind mount.
+    volumes:
+      - .:/app
+    environment:
+      DUCKDB_PATH: ${DUCKDB_PATH}
+      PREFECT_API_URL: ${PREFECT_API_URL}
+    depends_on:
+      minio:
+        condition: service_healthy
+      prefect-server:
+        condition: service_started
+
+volumes:
+  minio-data:
+  prefect-data:

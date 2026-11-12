@@ -1,14 +1,16 @@
-# ADR 0003 — DVC for the reference dataset; remote is a local folder for now
+# ADR 0003 — DVC for the reference dataset
 
 ## Decision
 - Track `data/reference/` (a fixed one-week extract of both real sources,
   built by `scripts/build_reference_dataset.py`) with DVC, not Git.
-- DVC remote `storage` is a **local folder** (`../dataops-dvc-storage`,
-  sibling to the repo, outside Git entirely), the same choice TP2 makes
-  before introducing a shared remote. **To migrate later:** once
-  docker-compose brings up MinIO (step 11), `dvc remote add -d storage
-  s3://<bucket>/dvc --endpointurl http://localhost:9000` replaces this one
-  line in `.dvc/config` -- nothing about how the data is tracked changes.
+- DVC remote `storage` started as a **local folder**
+  (`../dataops-dvc-storage`, sibling to the repo, outside Git entirely),
+  the same choice TP2 makes before introducing a shared remote.
+  **Update (step 11, ADR 0005):** now migrated to the MinIO instance
+  `docker-compose.yml` brings up -- `dvc remote modify storage url
+  s3://dvc-storage` + `endpointurl http://localhost:9000`, credentials in
+  the gitignored `.dvc/config.local`. Nothing about how the data is
+  tracked changed, only where the bytes live.
 
 ## Why a separate reference dataset, not the CI sample
 `tests/fixtures/*.csv` (step 7) stay in plain Git on purpose -- TP4 is
@@ -27,13 +29,13 @@ week is also safely past the real-time dataset's freshest-hours null gap
 (ADR 0002 addendum), confirmed empirically: 0 of 8064 rows have an empty
 `consommation`.
 
-## Known limitation (documented, not hidden)
-Because the remote is a local folder outside Git, **`dvc pull` only works
-on this machine** right now -- cloning the repo elsewhere (another machine,
-Codespaces) gives `data/reference.dvc` but no actual data until the remote
-moves to MinIO in step 11. This mirrors TP2's own progression (local folder
-first, "a real remote" later) and is called out explicitly so it isn't
-mistaken for a bug during the individual exam or the defense.
+## Former limitation, resolved in step 11
+Until step 11, the remote was a local folder outside Git, so `dvc pull`
+only worked on this machine -- cloning the repo elsewhere gave
+`data/reference.dvc` but no actual data. Resolved by the MinIO migration
+above: proved by deleting `data/reference/` *and* `.dvc/cache`, then
+`dvc pull` against MinIO restored both files with their exact original
+line counts (see ADR 0005's verification section).
 
 ## Alternatives rejected
 - Putting `data/reference/` straight into Git: 1.6 MB isn't huge, but it

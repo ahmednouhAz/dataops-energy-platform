@@ -1,0 +1,18 @@
+# Keep the build context small and never bake local state or secrets into
+# the image. docker-compose.yml bind-mounts the real repo over /app anyway,
+# so none of this is needed inside the container at runtime either.
+.git
+.venv
+.devcontainer
+.claude
+.pytest_cache
+.ruff_cache
+course/
+data/
+target/
+logs/
+*.duckdb
+*.log
+__pycache__/
+.dvc/cache
+.dvc/tmp
