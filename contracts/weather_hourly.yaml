@@ -1,0 +1,63 @@
+version: 1.0.0
+kind: DataContract
+apiVersion: v3.2.0
+id: weather_hourly
+name: Open-Meteo hourly weather per region
+status: draft
+servers:
+  - server: ci
+    type: local
+    format: csv
+    path: ./tests/fixtures/weather_sample.csv
+description:
+  purpose: >
+    Hourly temperature, wind, radiation and cloud cover for the
+    representative city of each mainland France region (seeds/regions.csv).
+schema:
+  - name: weather_hourly
+    physicalType: table
+    properties:
+      - name: code_insee_region
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: region_name
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: time
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: temperature_2m
+        physicalType: decimal
+        logicalType: number
+        required: true
+      - name: wind_speed_10m
+        physicalType: decimal
+        logicalType: number
+        required: true
+      - name: shortwave_radiation
+        physicalType: decimal
+        logicalType: number
+        required: true
+      - name: cloud_cover
+        physicalType: integer
+        logicalType: integer
+        required: true
+team:
+  name: ahmednouhAz (solo data platform owner)
+slaProperties:
+  - property: retention
+    value: 10
+    unit: y
+    description: >
+      Same retention rationale as eco2mix_regional: no externally imposed
+      deletion policy from Open-Meteo, so this is a project-lifetime choice.
+customProperties:
+  - property: contains_pii
+    value: false
+  - property: pii_note
+    value: >
+      No personal data: every row is a weather observation for a city
+      centroid, not tied to any individual.

@@ -449,3 +449,84 @@ the rule file can actually produce. `accepted_values` makes the YAML and the
 SQL cross-check each other: if someone edits one list of reasons and forgets
 the other, the test fails the next `dbt build`, not months later when a
 dashboard filter silently stops matching a misspelled reason.
+
+---
+
+## Step 7 — Pytest + data contracts (2026-11-12)
+
+### What was done
+- Refactored `pipeline/sources/eco2mix.py`: extracted `_plan_fetches`, a pure
+  function deciding which dataset(s) to query for a date range -- no network
+  call -- out of `fetch_eco2mix_rows`. This is what made the cutover logic
+  (ADR 0002) unit-testable without mocking `requests` at all.
+- `tests/test_eco2mix_source.py` (4 tests): the 3 cutover cases (before,
+  after, straddling) plus the exclusive-end-date edge case.
+- `tests/test_schema.py` (6 tests): valid batch passes; the exact step-1
+  finding (`eolien` mixed string/int) coerces cleanly; unknown region and
+  implausible consumption are refused; weather's `strict=True` catches an
+  extra column.
+- `tests/test_ingest.py` (2 tests): `_validate_or_refuse` doesn't raise on a
+  good batch, raises `SystemExit(1)` on a bad one.
+- `python -m pytest`: **12 passed**. `ruff check .`: all clean.
+- `contracts/eco2mix_regional.yaml`, `contracts/weather_hourly.yaml`: ODCS
+  v3.2.0, each with a `ci` server pointing at a small CSV fixture, a named
+  owner (`team.name`), a 10-year retention via `slaProperties`, and a
+  `customProperties` entry stating explicitly that neither source carries
+  personal data (region/city-level aggregates only, nothing about an
+  individual).
+- `tests/fixtures/eco2mix_sample.csv` (10 rows: 2 regions x 5 timestamps) and
+  `weather_sample.csv` (6 rows: 2 regions x 3 hours), hand-built with round
+  numbers so the reference total is easy to verify by hand: each eco2mix row
+  sums to 900 MW across the 6 production sources (100+500+100+50+100+50),
+  so 10 rows x 900 = **9000 MW total** once unpivoted.
+- `datacontract lint`/`test --server ci` on both contracts: valid, 30 and 14
+  checks respectively.
+- **Proved the contract actually catches a broken shape** (TP4's "day 3"
+  exercise, for real): temporarily renamed `consommation` to `consumption` in
+  the fixture, ran `datacontract test` again -- red, exit 1, "Required
+  column 'consommation' is missing". Restored the fixture, back to green.
+- `tests/load_fixtures.py`: loads the two CSV fixtures into `ci.duckdb`'s
+  `raw` schema, matching dlt's actual column types (timestamps as
+  timestamps, every measurement column as text, including
+  `eolien_terrestre`/`eolien_offshore` which aren't in the fixture at all but
+  exist as null columns in the real raw table because of dlt's explicit
+  type hints -- added as literal nulls here to match).
+- `dbt build --target ci`: **PASS=39**, same as `dev`. Confirms the whole
+  `stg_` -> `int_` -> marts chain works unchanged against a hand-built
+  fixture, not just live API data.
+- `report_md.py`: prints `fct_energy_production` as a Markdown table by
+  energy source, with a grand total; exits 1 with `REGRESSION: ...` if the
+  total doesn't match an expected value passed as an argument. Verified: `9000` passes (exit 0), `9999` fails (exit 1) with the exact TP4 message shape.
+
+### Why this matters for the four promises
+- **Reproductible**: `tests/load_fixtures.py` + `report_md.py` mean the
+  whole pipeline can be exercised and checked against a known number without
+  touching the live APIs at all -- this is what step 8's CI will actually
+  run on every PR, in seconds, deterministically.
+- **Fiable**: the contract and Pandera check different things on purpose
+  (shape vs. plausibility), and now both have an automatic regression test
+  proving they still catch what they're supposed to catch, not just that
+  they exist.
+
+### A gotcha avoided, not hit: the DuckDB-version trap from TP4
+TP4 warns that installing `datacontract-cli` can downgrade DuckDB below 2.0,
+breaking any `.duckdb` file written by a newer version. It didn't happen
+here: `requirements.txt` already pinned `duckdb>=1.1,<2` back in step 2 (to
+match `dbt-duckdb`'s own constraint), so there was nothing to downgrade.
+`dev.duckdb` stayed readable (`fct_energy_production` still had its 18438
+rows) immediately after installing `datacontract-cli`. Worth remembering:
+a pin made for one reason (dbt-duckdb compatibility) quietly prevented an
+unrelated problem two steps later.
+
+### A question the individual exam could ask, answered here
+**"Why does the data contract describe `eolien` as a plain number, when
+`pipeline/schema.py`'s Pandera schema and the real raw table both treat it
+as text?"** They're describing different things. The contract states what
+the *supplier* is allowed to send -- and the supplier's own documentation
+promises a number; the fact that the real-time dataset sometimes sends a
+string is the exact kind of supplier inconsistency the contract exists to
+catch (ADR 0002), not something to encode as "expected" in the contract
+itself. Pandera and the raw table's forced-text columns are *our* defensive
+reaction to that inconsistency once it's inside our pipeline -- a different
+layer, solving a different problem, matching TP4's framing exactly: "the
+contract describes the shape, not our rules for coping with a broken shape."
