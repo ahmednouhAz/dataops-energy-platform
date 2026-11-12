@@ -338,8 +338,8 @@ Each step ends with: the verification passed → answers to the questions in `do
 ## 9. Current status (UPDATE AT THE END OF EVERY SESSION)
 
 - **Date of last update:** 2026-11-12
-- **Current step:** 8 — CI quality gate — **done**. Next: step 9, DVC.
-- **Steps 0-8 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
+- **Current step:** 9 — DVC — **done**. Next: step 10, backfill.
+- **Steps 0-9 done** (full detail per step: `docs/learning_log.md`; checklist: `docs/PROGRESS.md`; see GitHub PR history for exact PR numbers):
   - 0: local setup (Python 3.12 + 3.14, Docker, repo cloned, `.gitignore` fixed to exclude `course/`/`.claude/`).
   - 1: explored both APIs; confirmed real-time dataset id `eco2mix-regional-tr`; found it doesn't share eco2mix-cons-def's schema; corrected a wrong "Open-Meteo lags a few days" assumption (ADR 0002).
   - 2: dlt ingestion for both sources into `raw` in `dev.duckdb`, merge write disposition; idempotency proved (`pipeline/`, `query.py`).
@@ -349,6 +349,7 @@ Each step ends with: the verification passed → answers to the questions in `do
   - 6: generic tests on every mart (`unique`/`not_null`/`relationships`/`accepted_values`), 2 singular tests (composite unique key, reject-rate guard), 2 dbt unit tests on `int_eco2mix_checked`, descriptions on every mart/column, `dbt docs generate`. `dbt build`: `PASS=39`. Proved the "stop the chain" behavior for real by deliberately breaking a rule and watching 6 models + 10 tests get `SKIP`ped. Found that dbt unit tests need every `ref()` mocked, including seeds — not just the one input you're overriding.
   - 7: `tests/test_*.py` (12 pytest tests, `ruff` clean); `contracts/eco2mix_regional.yaml`/`weather_hourly.yaml` (ODCS, owner, 10y retention, no-PII statement); `tests/fixtures/*.csv` + `tests/load_fixtures.py` + `report_md.py` (reference: 9000 MW over 60 rows). Proved the contract catches a renamed column (red, exit 1) and `dbt build --target ci` matches `dev` (`PASS=39`) on the fixtures alone, no live API calls. Avoided TP4's DuckDB-downgrade trap because `duckdb<2` was already pinned since step 2.
   - 8: `.github/workflows/ci.yml` (lint → python-tests → data-quality, + parallel gitleaks) and `nightly.yml`; branch protection on `main` requiring all 4 checks. Watched real GitHub Actions runs go green (not simulated), confirmed the nightly artifact contains `index.html`, and ran both required red-PR demos for real — supplier PR #13 (renamed column, contract red, `BLOCKED`) and colleague PR #14 (relaxed Pandera bound, pytest red, `data-quality` never started, `BLOCKED`) — both closed without merging.
+  - 9: `data/reference/` (a fixed 2026-09-01..07 week, 8064 + 2016 rows) tracked by DVC, local-folder remote for now (ADR 0003, migrates to MinIO in step 11). Proved recovery for real: deleted the data *and* the DVC cache, `dvc pull` restored both files exactly.
 - **Open issues:** devcontainer doesn't build in Codespaces (see §2) → fix before using the laptop at uni.
 - **Next class session:** [FILL IN]
 - **Project deadline / defense date:** [FILL IN]

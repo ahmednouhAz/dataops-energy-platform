@@ -7,3 +7,4 @@ requests>=2.32
 pytest>=8.0
 ruff>=0.6
 datacontract-cli[duckdb]>=0.10
+dvc[s3]>=3.0,<4

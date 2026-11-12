@@ -5,7 +5,7 @@ Tick an item only when it is actually done and verified, not when it is started.
 
 ## Version control
 - [ ] Git, one branch per change, every change through a pull request (solo: self-review comment + green CI)
-- [ ] DVC for reference datasets and test samples
+- [x] DVC for reference datasets and test samples (`data/reference/`, local remote for now -- ADR 0003)
 
 ## Transformation (dbt on DuckDB)
 - [x] `sources.yml` for each source with a freshness check (`dbt source freshness`)
@@ -82,3 +82,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | 6 | dbt tests + docs | done | 2026-11-12 |
 | 7 | Pytest + data contracts | done | 2026-11-12 |
 | 8 | CI quality gate | done | 2026-11-12 |
+| 9 | DVC | done | 2026-11-12 |
