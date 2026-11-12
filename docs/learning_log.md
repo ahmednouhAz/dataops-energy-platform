@@ -648,3 +648,90 @@ DVC anyway would mean the CI job needs a `dvc pull` step just to get a file
 smaller than this sentence -- extra moving parts for no benefit. `data/reference/`
 earns DVC because it's 1.6 MB, built from two live API calls, and only
 useful at a size nobody wants sitting in `git log` forever.
+
+## Step 10 — Backfill (2026-11-12)
+
+### What was done
+- `pipeline/sources/eco2mix.py::fetch_definitive_backfill_rows`: bulk-fetch
+  via Opendatasoft's `/exports/csv` endpoint, no pagination cap (unlike
+  `/records`'s 100-rows/page, which would need ~29,000 requests for the
+  full history). `pipeline/backfill.py` chunks the range one calendar year
+  at a time, 2013-01-01 to the cutover date (2026-08-31).
+- `pipeline/http_utils.py::get_with_retries`: a real `ConnectionError`
+  (connection reset) killed the first full run mid-backfill; wrapped every
+  HTTP call in both sources with 3 retries.
+- `_normalize_backfill_row`: the CSV export uses two different missing-value
+  placeholders (`""` and, found in real 2013 `eolien` data, a literal `-`)
+  where the JSON `/records` endpoint just sends `null`. Pandera correctly
+  *refused* the first 2013 chunk over this (a `str`/`int` comparison
+  error) rather than silently loading bad data -- the validation did
+  exactly its job, and the fix was in the fetch code, not in Pandera.
+- **Found a real performance bug during the first full run**: using
+  `write_disposition="merge"` (same as daily ingestion) made every chunk
+  slower than the last -- 1m42s for year 1, 8m27s by year 10 -- because
+  `merge` re-scans the whole destination table on every load. Killed the
+  run after 50 minutes (10/14 years) rather than let it keep degrading.
+  Fixed with an explicit delete-then-append per chunk instead
+  (`_delete_existing_chunk` + `write_disposition="append"`): one year
+  dropped from 8m27s to 93.6s.
+- **Found a second, subtler bug by testing idempotency**: re-running the
+  2015 chunk changed the row count (+24), which should be impossible if
+  the operation is truly idempotent. Traced to France's DST spring-forward
+  transition -- the source API genuinely emits two rows for the same
+  `(region, timestamp)` that one day a year. The *old* `merge`-based loads
+  (years 2013-2022) had been silently swallowing this duplicate at
+  raw-load time, hiding it from `int_eco2mix_checked`'s quarantine rule,
+  while the new delete-then-append approach preserves it and lets dbt
+  catch it transparently -- an inconsistency across years that contradicts
+  "raw = untouched." Fixed by reloading **all 14 years** with the
+  corrected approach, and by adding `_dlt_id desc` as a tie-breaker in
+  `int_eco2mix_checked.sql`'s dedup rule (both duplicate rows share one
+  `_dlt_load_id`, so without a secondary key which row survives was
+  undefined, not just unlikely to matter).
+- **Found a third issue reconciling the rebuilt fact table**: after
+  `dbt build --full-refresh`, 701,286 nulls failed `fct_energy_production`'s
+  `not_null` test on `production_mw`. Traced to 5 of 12 regions having zero
+  nuclear capacity -- a legitimate "not applicable," not a quality defect.
+  Fixed in `int_energy_production_unpivoted.sql` by filtering out null
+  `production_mw` after the unpivot instead of quarantining or forcing a
+  misleading `0`.
+- Also learned (the hard way, via a failed `query.py` call) that an
+  incremental model's `is_incremental()` filter only looks *forward*
+  (`date_heure > max seen so far`), so it silently ignores a backfill that
+  adds data *older* than what's already there -- needs `dbt build
+  --full-refresh` after any backfill, not a plain `dbt build`.
+- See `docs/adr/0004-backfill-approach.md` for the full decision record.
+
+### Verification
+- `raw.eco2mix_regional`: 2,877,672 rows, 2,877,336 distinct
+  `(code_insee_region, date_heure)` keys -- the 336-row gap is exactly
+  14 years x 24 rows (12 regions x 2 DST-duplicate rows each), confirmed
+  uniform across every single year.
+- `dbt build --full-refresh`: `PASS=39 WARN=0 ERROR=0 SKIP=0`.
+  `fct_energy_production`: 16,560,648 rows (>= 1,000,000 requirement met).
+- **Idempotency proved directly**: counted `raw.eco2mix_regional` rows for
+  2015 (210,240) and the global total/distinct-key counts, re-ran the 2015
+  chunk a second time, counted again -- identical before and after.
+
+### Why this matters for the four promises
+- **Reliable**: two of the three bugs found here (the silent `merge`
+  dedup, the nuclear-null false alarm) would have published a wrong number
+  with no error anywhere -- the kind of mistake that only idempotency
+  testing and cross-checking row counts against reality (which regions
+  have nuclear plants?) catches.
+- **Reproductible**: the backfill is a parametrized script
+  (`--start-date`/`--end-date`), not a one-off manual sequence of API
+  calls -- anyone can rebuild the full history with one command.
+
+### A question the individual exam could ask, answered here
+**"You ran the same backfill chunk twice and the row count changed. Is
+that a bug in your idempotency logic?"** No -- it was a bug in what the
+*old* loads had done, not the re-run itself. The re-run (delete-then-append)
+behaved correctly both times; what changed was that the *first* run under
+the new code preserved a duplicate the *previous* `merge`-based load had
+been silently eating. The lesson: idempotency means "running this
+operation twice gives the same result as running it once" -- it does not
+mean "today's result must match whatever a differently-built pipeline
+produced yesterday." Catching the mismatch required comparing counts
+before/after a re-run, which is exactly why that proof is part of this
+step's deliverable.

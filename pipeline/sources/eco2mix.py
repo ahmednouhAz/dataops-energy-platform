@@ -11,7 +11,10 @@ Fetching is a plain function, not a @dlt.resource, so pipeline/ingest.py can
 hold the whole batch in memory and run it past Pandera (step 3) *before*
 deciding whether to load it at all.
 """
-import requests
+import csv
+import io
+
+from pipeline.http_utils import get_with_retries
 
 BASE = "https://odre.opendatasoft.com/api/explore/v2.1"
 DEFINITIVE_ID = "eco2mix-regional-cons-def"
@@ -41,7 +44,7 @@ def _fetch_records(dataset_id, start_date, end_date):
     where = f'date_heure >= "{start_date}" and date_heure < "{end_date}"'
     offset = 0
     while True:
-        resp = requests.get(
+        resp = get_with_retries(
             url,
             params={
                 "where": where,
@@ -83,3 +86,37 @@ def fetch_eco2mix_rows(start_date: str, end_date: str) -> list[dict]:
     for dataset_id, sub_start, sub_end in _plan_fetches(start_date, end_date):
         rows.extend(_fetch_records(dataset_id, sub_start, sub_end))
     return rows
+
+
+# The CSV export represents "missing" two different ways found by testing
+# against real history: an empty string, and (seen in 2013, eolien
+# specifically -- a region where wind wasn't yet consistently metered) a
+# literal "-". The /records (JSON) endpoint just sends null for the same
+# thing. Normalized to None so downstream code (Pandera, dlt) can't tell
+# which endpoint, or which placeholder, a row came from.
+MISSING_VALUE_PLACEHOLDERS = {"", "-"}
+
+
+def _normalize_backfill_row(row: dict) -> dict:
+    """Pure function, no network -- unit-testable on its own
+    (tests/test_eco2mix_source.py)."""
+    return {k: (None if v in MISSING_VALUE_PLACEHOLDERS else v) for k, v in row.items()}
+
+
+def fetch_definitive_backfill_rows(start_date: str, end_date: str) -> list[dict]:
+    """Bulk-fetch definitive-dataset rows for [start_date, end_date) via the
+    /exports endpoint -- no pagination cap, unlike /records (step 2's
+    original 100-rows-per-page limit), so this is what step 10's backfill
+    actually uses for real historical volume.
+
+    Only the definitive dataset: backfill is for history before the
+    cutover (ADR 0002); ongoing ingestion already covers the real-time
+    dataset through fetch_eco2mix_rows.
+    """
+    url = f"{BASE}/catalog/datasets/{DEFINITIVE_ID}/exports/csv"
+    where = f'date_heure >= "{start_date}" and date_heure < "{end_date}"'
+    resp = get_with_retries(url, params={"where": where, "timezone": "UTC"}, timeout=180, attempts=3, backoff_seconds=5)
+    resp.raise_for_status()
+    text = resp.content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text), delimiter=";")
+    return [_normalize_backfill_row(row) for row in reader]
