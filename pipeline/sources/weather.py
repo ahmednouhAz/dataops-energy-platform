@@ -1,12 +1,15 @@
-"""dlt source for Open-Meteo hourly weather, one call per region.
+"""Open-Meteo hourly weather: fetch, then (in pipeline/ingest.py) validate and load.
 
-Uses seeds/regions.csv (step 1) to know which lat/lon represents each of
-the 12 mainland France regions.
+One API call per region. Uses seeds/regions.csv (step 1) to know which
+lat/lon represents each of the 12 mainland France regions.
+
+Fetching is a plain function, not a @dlt.resource, so pipeline/ingest.py can
+hold the whole batch in memory and run it past Pandera (step 3) *before*
+deciding whether to load it at all.
 """
 import csv
 from pathlib import Path
 
-import dlt
 import requests
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -48,17 +51,13 @@ def _fetch_region(region, start_date, end_date):
         }
 
 
-@dlt.resource(
-    name="weather_hourly",
-    write_disposition="merge",
-    primary_key=("code_insee_region", "time"),
-)
-def weather_hourly(start_date: str, end_date: str):
-    """Yield hourly weather rows for every region for [start_date, end_date]."""
+RESOURCE_NAME = "weather_hourly"
+PRIMARY_KEY = ("code_insee_region", "time")
+
+
+def fetch_weather_rows(start_date: str, end_date: str) -> list[dict]:
+    """Return hourly weather rows for every region for [start_date, end_date]."""
+    rows = []
     for region in _load_regions():
-        yield from _fetch_region(region, start_date, end_date)
-
-
-@dlt.source
-def weather_source(start_date: str, end_date: str):
-    return weather_hourly(start_date, end_date)
+        rows.extend(_fetch_region(region, start_date, end_date))
+    return rows

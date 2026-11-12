@@ -20,6 +20,7 @@ Tick an item only when it is actually done and verified, not when it is started.
 ## Quality
 - [ ] a data contract per source (ODCS), with owner and retention period
 - [ ] dbt generic + singular tests, >= 2 unit tests, a quarantine table
+- [x] (bonus) Pandera validation at the ingestion entrance, refuses an unusable batch before loading (`pipeline/schema.py`, step 3)
 
 ## Continuous integration
 - [ ] GitHub Actions on every PR: lint, pytest, contract, `dbt build` on a sample
@@ -74,3 +75,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | 0 | Local setup on the desktop | done (PR #2) | 2026-11-12 |
 | 1 | Explore the sources | done | 2026-11-12 |
 | 2 | Ingestion with dlt | done | 2026-11-12 |
+| 3 | Pandera at the entrance | done | 2026-11-12 |
