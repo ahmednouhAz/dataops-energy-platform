@@ -24,8 +24,8 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [x] (bonus) Pandera validation at the ingestion entrance, refuses an unusable batch before loading (`pipeline/schema.py`, step 3)
 
 ## Continuous integration
-- [ ] GitHub Actions on every PR: lint, pytest, contract, `dbt build` on a sample
-- [ ] a red PR cannot be merged (branch protection on `main` with required status checks)
+- [x] GitHub Actions on every PR: lint, pytest, contract, `dbt build` on a sample (`.github/workflows/ci.yml`)
+- [x] a red PR cannot be merged (branch protection on `main`, required checks: lint, gitleaks, python-tests, data-quality; demoed with two closed-without-merging PRs, #13 and #14 -- see `docs/learning_log.md` step 8)
 
 ## Environment
 - [ ] `docker compose up` starts the whole platform
@@ -52,7 +52,7 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [ ] a written freshness objective (SLO)
 
 ## Governance & security
-- [ ] gitleaks in CI
+- [x] gitleaks in CI (`.github/workflows/ci.yml`, parallel `gitleaks` job)
 - [ ] personal data masked (document explicitly: our data has no personal data; show the masking mechanism anyway)
 - [ ] owner + retention in each contract; documented lineage
 
@@ -81,3 +81,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | 5 | Rules, quarantine, marts in star | done | 2026-11-12 |
 | 6 | dbt tests + docs | done | 2026-11-12 |
 | 7 | Pytest + data contracts | done | 2026-11-12 |
+| 8 | CI quality gate | done | 2026-11-12 |

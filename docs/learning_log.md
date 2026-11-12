@@ -530,3 +530,73 @@ itself. Pandera and the raw table's forced-text columns are *our* defensive
 reaction to that inconsistency once it's inside our pipeline -- a different
 layer, solving a different problem, matching TP4's framing exactly: "the
 contract describes the shape, not our rules for coping with a broken shape."
+
+---
+
+## Step 8 — CI quality gate (2026-11-12)
+
+### What was done
+- `.github/workflows/ci.yml`: 4 jobs -- `lint` (ruff), `gitleaks` (runs in
+  parallel, doesn't block the others), `python-tests` (needs `lint`),
+  `data-quality` (needs `python-tests`: both contracts, the fixtures
+  through Pandera via `tests/validate_fixtures.py`, `python -m
+  tests.load_fixtures`, `dbt build --target ci`, `report_md.py 9000 >>
+  $GITHUB_STEP_SUMMARY`, and `run_results.json` uploaded as an artifact).
+  Triggers on every pull request and on push to `main`.
+- `.github/workflows/nightly.yml`: scheduled (05:00 UTC) + manual
+  (`workflow_dispatch`), rebuilds from the same fixtures and runs `dbt docs
+  generate`, uploading the docs as an artifact. **Scope note**: this
+  rebuilds from the static CI fixtures, not live API data -- matching TP4's
+  own nightly exactly, whose stated purpose is catching "a library upgrade
+  breaks something", not refreshing production data. A real daily data
+  refresh is Prefect's job (step 12), not this workflow.
+- Enabled **branch protection on `main`** via the GitHub API: required
+  status checks `lint`, `gitleaks`, `python-tests`, `data-quality`; no
+  required PR-review approvals (solo project -- the self-review comment +
+  green CI substitutes for a teammate's review, as noted in `CLAUDE.md`
+  §6); force-push and branch deletion disabled.
+- Watched the **actual** GitHub Actions run (not a local simulation) on the
+  real PR for this branch: all 4 jobs green
+  ([run 43277494795](https://github.com/ahmednouhAz/dataops-energy-platform/actions/runs/43277494795)).
+  After merging, confirmed a fresh green run on `main` itself
+  ([run 43277929611](https://github.com/ahmednouhAz/dataops-energy-platform/actions/runs/43277929611)).
+  Manually triggered Nightly and confirmed the `dbt-docs` artifact actually
+  contains `index.html`
+  ([run 43278301751](https://github.com/ahmednouhAz/dataops-energy-platform/actions/runs/43278301751)).
+
+### The two required red-PR demos (TP4 steps 7-8, done for real on GitHub, not simulated)
+- **Supplier PR** ([PR #13](https://github.com/ahmednouhAz/dataops-energy-platform/pull/13),
+  closed without merging): renamed `consommation` to `consumption` in the
+  eco2mix fixture. Result: `lint`/`gitleaks`/`python-tests` green (no code
+  changed), `data-quality` red at the contract step with "Required column
+  'consommation' is missing", `mergeStateStatus: BLOCKED`.
+- **Colleague PR** ([PR #14](https://github.com/ahmednouhAz/dataops-energy-platform/pull/14),
+  closed without merging): widened the Pandera plausibility bound on
+  `consommation` from `(0, 20000)` to `(-500, 999999999)`. Result:
+  `lint`/`gitleaks` green, `python-tests` red
+  (`test_implausible_consumption_is_refused` failed), `data-quality` never
+  started (`needs:` chaining), `mergeStateStatus: BLOCKED`.
+- Both demos were verified against the real `mergeStateStatus` field via
+  `gh pr view --json mergeable,mergeStateStatus`, not just "the checks look
+  red" -- the thing that actually matters is that GitHub itself, not just a
+  human reading the Checks tab, refuses the merge.
+
+### Why this matters for the four promises
+- **Fiable**: the two demos prove the gate catches *both* kinds of break
+  the brief names -- a data change (supplier) and a code change
+  (colleague) -- and that recovery is just closing the PR; `main` was never
+  at risk because the change never merged.
+- **Reproductible**: anyone cloning the repo gets the same required checks
+  the moment they open a PR; nothing about the gate depends on a human
+  remembering to run something locally first.
+
+### A question the individual exam could ask, answered here
+**"The CI is red on a PR that touches `models/marts/`. Where do you look
+first, and why?"** `needs:` tells you where to look before reading a single
+log line: if `python-tests` is red, `data-quality` never ran at all, so the
+problem is in Python code or a dbt unit test's fixture rows, not the SQL
+itself. If `python-tests` is green but `data-quality` is red, the problem is
+either the contract (shape), Pandera (batch plausibility), or an actual dbt
+model/test -- and the job's own step names (`Data contracts on the CI
+samples` vs. `dbt build`) say which one failed before you even open the
+full log.
