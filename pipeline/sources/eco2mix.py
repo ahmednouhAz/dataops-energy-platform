@@ -63,12 +63,23 @@ RESOURCE_NAME = "eco2mix_regional"
 PRIMARY_KEY = ("code_insee_region", "date_heure")
 
 
+def _plan_fetches(start_date: str, end_date: str) -> list[tuple[str, str, str]]:
+    """Decide which dataset(s) to query for [start_date, end_date), and the
+    sub-range for each -- pure logic, no network, so it's unit-testable on
+    its own (tests/test_eco2mix_source.py)."""
+    if end_date <= CUTOVER_DATE:
+        return [(DEFINITIVE_ID, start_date, end_date)]
+    if start_date >= CUTOVER_DATE:
+        return [(REALTIME_ID, start_date, end_date)]
+    return [
+        (DEFINITIVE_ID, start_date, CUTOVER_DATE),
+        (REALTIME_ID, CUTOVER_DATE, end_date),
+    ]
+
+
 def fetch_eco2mix_rows(start_date: str, end_date: str) -> list[dict]:
     """Return eco2mix rows for [start_date, end_date) as a list, switching dataset at the cutover."""
-    if end_date <= CUTOVER_DATE:
-        return list(_fetch_records(DEFINITIVE_ID, start_date, end_date))
-    if start_date >= CUTOVER_DATE:
-        return list(_fetch_records(REALTIME_ID, start_date, end_date))
-    rows = list(_fetch_records(DEFINITIVE_ID, start_date, CUTOVER_DATE))
-    rows += list(_fetch_records(REALTIME_ID, CUTOVER_DATE, end_date))
+    rows = []
+    for dataset_id, sub_start, sub_end in _plan_fetches(start_date, end_date):
+        rows.extend(_fetch_records(dataset_id, sub_start, sub_end))
     return rows

@@ -1,0 +1,107 @@
+version: 1.0.0
+kind: DataContract
+apiVersion: v3.2.0
+id: eco2mix_regional
+name: eCO2mix regional electricity production and consumption
+status: draft
+servers:
+  - server: ci
+    type: local
+    format: csv
+    path: ./tests/fixtures/eco2mix_sample.csv
+description:
+  purpose: >
+    Half-hourly (definitive) or 15-minute (real-time) electricity
+    consumption and production by source, per mainland France region.
+    Two upstream datasets, same shape (see docs/adr/0002-source-exploration.md
+    for why they don't actually agree on every column's type -- this
+    contract describes what the supplier is contractually expected to send,
+    which is why eolien is declared as a number here even though the
+    real-time dataset sometimes sends it as a string: that mismatch is
+    exactly the kind of breach this contract exists to catch).
+schema:
+  - name: eco2mix_regional
+    physicalType: table
+    properties:
+      - name: code_insee_region
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: libelle_region
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: nature
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: date
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: heure
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: date_heure
+        physicalType: string
+        logicalType: string
+        required: true
+      - name: consommation
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: thermique
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: nucleaire
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: eolien
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: solaire
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: hydraulique
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: pompage
+        physicalType: integer
+        logicalType: integer
+      - name: bioenergies
+        physicalType: integer
+        logicalType: integer
+        required: true
+      - name: ech_physiques
+        physicalType: integer
+        logicalType: integer
+      - name: stockage_batterie
+        physicalType: integer
+        logicalType: integer
+      - name: destockage_batterie
+        physicalType: integer
+        logicalType: integer
+team:
+  name: ahmednouhAz (solo data platform owner)
+slaProperties:
+  - property: retention
+    value: 10
+    unit: y
+    description: >
+      Kept for the life of the project plus margin; the source itself
+      (ODRE/RTE open data) has no stated deletion policy, so our own
+      retention is the limiting factor, not a legal one.
+customProperties:
+  - property: contains_pii
+    value: false
+  - property: pii_note
+    value: >
+      No personal data: every row is a region-level aggregate (a whole
+      administrative region's electricity grid), never an individual or
+      household. Nothing to mask.

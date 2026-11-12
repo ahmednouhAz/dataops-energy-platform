@@ -18,7 +18,7 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [ ] one warehouse file per environment (`dev.duckdb`, `prod.duckdb`) chosen by the dbt target; CI builds on a sample in seconds
 
 ## Quality
-- [ ] a data contract per source (ODCS), with owner and retention period
+- [x] a data contract per source (ODCS), with owner and retention period (`contracts/eco2mix_regional.yaml`, `contracts/weather_hourly.yaml`)
 - [x] dbt generic + singular tests, >= 2 unit tests
 - [x] a quarantine table (`eco2mix_rejected`)
 - [x] (bonus) Pandera validation at the ingestion entrance, refuses an unusable batch before loading (`pipeline/schema.py`, step 3)
@@ -80,3 +80,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | 4 | dbt project + staging | done | 2026-11-12 |
 | 5 | Rules, quarantine, marts in star | done | 2026-11-12 |
 | 6 | dbt tests + docs | done | 2026-11-12 |
+| 7 | Pytest + data contracts | done | 2026-11-12 |
