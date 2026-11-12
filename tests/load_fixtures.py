@@ -4,7 +4,7 @@ measurement column as text -- see pipeline/sources/eco2mix.py's
 TEXT_COLUMN_HINTS), so dbt build --target ci behaves like a real dlt load.
 
 Run from the repo root:
-    python tests/load_fixtures.py
+    python -m tests.load_fixtures
 """
 import duckdb
 
