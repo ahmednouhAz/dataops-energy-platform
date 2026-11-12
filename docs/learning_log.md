@@ -600,3 +600,51 @@ either the contract (shape), Pandera (batch plausibility), or an actual dbt
 model/test -- and the job's own step names (`Data contracts on the CI
 samples` vs. `dbt build`) say which one failed before you even open the
 full log.
+
+---
+
+## Step 9 — DVC (2026-11-12)
+
+### What was done
+- Installed `dvc[s3]` (the S3 extra now, not later -- MinIO is S3-compatible,
+  so step 11's migration is just changing one line in `.dvc/config`, no new
+  dependency to add then).
+- `scripts/build_reference_dataset.py`: pulls a **fixed** historical week
+  (2026-09-01 to 2026-09-07) from both real APIs and saves it as CSV under
+  `data/reference/`. Deliberately not "the last 7 days" -- a reference
+  dataset has to produce the exact same file every time it's rebuilt, which
+  a sliding window can't guarantee. Got exactly 8064 eco2mix rows (7 days x
+  96 x 12 regions) and 2016 weather rows (7 x 24 x 12), confirming 0 nulls
+  in `consommation` -- this window is safely past the freshest-hours null
+  gap from the step 5/ADR 0002 addendum.
+- `dvc init`, `dvc add data/reference`, `dvc remote add -d storage
+  ../dataops-dvc-storage` (a local folder, sibling to the repo, same choice
+  TP2 makes before a shared remote exists), `dvc push`.
+- `docs/adr/0003-dvc-remote.md`: explains why `data/reference/` is separate
+  from the tiny `tests/fixtures/*.csv` (which TP4 explicitly says belongs in
+  plain Git, not DVC) and from the full backfill (step 10, warehouse-only,
+  never a tracked file), why the date range is fixed, and the known
+  limitation that `dvc pull` only works on this machine until the remote
+  moves to MinIO (step 11).
+- **Proved the actual recovery mechanic**, not just that the commands ran:
+  deleted `data/reference/` *and* `.dvc/cache` (simulating a genuinely fresh
+  clone, not just a checkout), ran `dvc pull`: `3 files fetched and 2 files
+  added`, both CSVs back with their exact original line counts, `dvc
+  status` reporting clean.
+
+### Why this matters for the four promises
+- **Reproductible**: this is the literal mechanism behind "clone the repo
+  and get the same data" for anything too big for Git -- proven by
+  deliberately destroying both the working copy and the cache, not just
+  trusting the tutorial said it would work.
+
+### A question the individual exam could ask, answered here
+**"Why isn't `tests/fixtures/eco2mix_sample.csv` under DVC too, since it's
+also data?"** Size and volatility, not "is it data". DVC's whole value is
+versioning something too big or too fast-changing to live comfortably in
+Git's history; a 10-row fixture that almost never changes is exactly what
+Git handles fine on its own, and TP4 says so explicitly. Putting it under
+DVC anyway would mean the CI job needs a `dvc pull` step just to get a file
+smaller than this sentence -- extra moving parts for no benefit. `data/reference/`
+earns DVC because it's 1.6 MB, built from two live API calls, and only
+useful at a size nobody wants sitting in `git log` forever.
