@@ -222,9 +222,12 @@ __marimo__/
 # --- DataOps project ---
 *.duckdb
 *.duckdb.wal
-dbt/target/
-dbt/logs/
-dbt/dbt_packages/
+# dbt_project.yml lives at the repo root (TP3 convention, see CLAUDE.md §7),
+# not under a dbt/ subfolder, so its generated artifacts land here too.
+target/
+logs/
+dbt_packages/
+.user.yml
 .dlt/secrets.toml
 
 # Teacher's course material: not ours to publish (see CLAUDE.md section 3)

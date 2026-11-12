@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: raw
+    description: >
+      Raw data loaded as-is by dlt (pipeline/ingest.py). No row is removed
+      or retyped here -- that happens in staging. Measurement columns are
+      forced to text at load time because the eco2mix definitive and
+      real-time datasets don't agree on their types (see ADR 0002).
+    tables:
+      - name: eco2mix_regional
+        description: >
+          One row per French mainland region per half-hour (definitive
+          dataset, until 2026-08-31) or per 15 minutes (real-time dataset,
+          from 2026-08-31 onward). Electricity consumption and production
+          by energy source, in MW.
+        loaded_at_field: date_heure
+        freshness:
+          warn_after: { count: 2, period: day }
+          error_after: { count: 5, period: day }
+
+      - name: weather_hourly
+        description: >
+          One row per region per hour: temperature, wind, radiation and
+          cloud cover from the Open-Meteo archive API, for the
+          representative city listed in seeds/regions.csv.
+        loaded_at_field: time
+        freshness:
+          warn_after: { count: 2, period: day }
+          error_after: { count: 5, period: day }

@@ -8,8 +8,8 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [ ] DVC for reference datasets and test samples
 
 ## Transformation (dbt on DuckDB)
-- [ ] `sources.yml` for each source with a freshness check (`dbt source freshness`)
-- [ ] one `stg_` model per source table, `int_` models
+- [x] `sources.yml` for each source with a freshness check (`dbt source freshness`)
+- [x] one `stg_` model per source table (`int_` models: step 5)
 - [ ] star-schema marts: >= 1 `fct_` and >= 2 `dim_`; >= 8 models in total
 - [ ] `unique` + `not_null` on every key, `relationships` between facts and dimensions, `accepted_values` on closed-list columns
 - [ ] >= 2 singular tests and >= 2 unit tests
@@ -76,3 +76,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | 1 | Explore the sources | done | 2026-11-12 |
 | 2 | Ingestion with dlt | done | 2026-11-12 |
 | 3 | Pandera at the entrance | done | 2026-11-12 |
+| 4 | dbt project + staging | done | 2026-11-12 |
