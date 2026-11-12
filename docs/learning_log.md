@@ -303,3 +303,82 @@ replaces this, because dbt's whole project-discovery model assumes you run
 it from there. This is exactly TP3's own troubleshooting note, we just hit
 the version of it where `profiles.yml` isn't even in the default
 `~/.dbt/` location, so the error shows up one step earlier.
+
+---
+
+## Step 5 — Rules, quarantine, marts in star (2026-11-12)
+
+### What was done
+- `models/intermediate/int_eco2mix_checked.sql`: first-match-wins
+  `reject_reason` (TP3 pattern), with 5 rules: `missing_region`,
+  `unknown_region` (checked against the `regions` seed, not a hard-coded
+  list), `invalid_timestamp`, `missing_consumption`, `negative_consumption`,
+  `duplicate_region_datetime`. The duplicate rule keeps the row with the
+  **most recent** `_dlt_load_id` rather than TP3's "keep the first" -- a
+  later load should supersede an earlier one for the same (region,
+  timestamp), since a correction arriving later is more trustworthy than
+  what we saw first, not less.
+- `models/intermediate/int_energy_production_unpivoted.sql`: unpivots 6
+  energy sources (thermique, nucleaire, eolien, solaire, hydraulique,
+  bioenergies) into one row per region x timestamp x source, clean rows
+  only. Storage/exchange columns (pompage, batteries, ech_physiques) are
+  deliberately left out -- they aren't "production by source".
+- `models/intermediate/int_consumption_hourly.sql`: averages eco2mix's
+  15/30-min consumption up to the hour, to match weather's grain for the
+  join.
+- Seeds: `energy_sources.csv` (6 rows, `is_renewable` flag) alongside the
+  existing `regions.csv`.
+- Marts: `dim_region`, `dim_energy_source`, `dim_date` (built with
+  `generate_series` bounded by the actual min/max `date_heure` in the data,
+  not a hard-coded range, so it grows with the backfill), `fct_energy_production`
+  (**incremental**, keyed on region+timestamp+source), `fct_consumption_weather`
+  (joins the hourly-aggregated consumption to weather), `eco2mix_rejected`
+  (quarantine). 11 models total, well past the "8 models, >=1 fct_, >=2 dim_"
+  requirement.
+- `dbt run` built all 11 on the first try, including the `generate_series`
+  lateral join in `dim_date` and the incremental model.
+
+### Proved the incremental model is actually incremental, not just a no-op
+- Re-ran `dbt run --select fct_energy_production` with no new raw data:
+  row count stayed at 13824 (2304 clean rows x 6 sources).
+- Loaded one more day (2026-11-12) directly into raw (1104 new rows,
+  bypassing the coupled ingest CLI since Open-Meteo's archive API correctly
+  rejected the matching weather call -- its allowed range still ends at
+  today, confirming the step-1 finding holds). Re-ran `dbt run`: fact table
+  grew to 18438 rows. Reconciled by hand: 1104 new raw rows, 335 rejected
+  (see below), 769 newly clean x 6 sources = 4614, and 13824 + 4614 = 18438
+  exactly. A no-op run followed by a correctly-sized incremental run is what
+  actually proves `is_incremental()` is doing its job, not just "the command
+  didn't error".
+
+### A real discovery, not a bug: the freshest hours of real-time data arrive empty
+Debugging why 335 of the 1104 new rows were rejected led to finding that the
+`eco2mix-regional-tr` dataset publishes a region/timestamp row **before**
+its measurements exist -- every single measurement column was null for the
+freshest ~7 hours of the day, not just `consommation`. Documented as an
+addendum to ADR 0002, with a consequence for step 12: a daily orchestration
+job that only ingests "new" dates would quarantine these rows once and never
+revisit them, permanently losing data the API would have filled in a few
+hours later. The fix (for step 12) is to re-ingest a short trailing window
+each run, not just strictly new dates, so dlt's `merge` disposition can
+upsert the real values once they appear.
+
+Also relabeled the rule that catches this: it was originally one
+`negative_consumption` reason covering both "null" and "actually negative" --
+split into `missing_consumption` (null) and `negative_consumption` (truly
+negative) once the data showed every single case was a null, not a negative
+value. A quarantine table whose reason column lies about *why* a row was
+rejected is worse than no quarantine table: the next person to read it (an
+individual-exam grader, a teammate, future me) would draw the wrong
+conclusion.
+
+### A question the individual exam could ask, answered here
+**"Why average consumption to the hour in `int_consumption_hourly` instead of
+just picking one 15-minute reading per hour?"** Picking one reading (e.g.
+the first) would silently throw away real variation within the hour and
+make the choice of *which* reading arbitrary and undocumented -- exactly the
+kind of hidden decision `CLAUDE.md`'s "never hide magic" rule exists to
+avoid. Averaging is explicit about what happened to the data, and it's the
+right aggregation for a quantity like power (MW) where the hourly figure we
+actually want to compare against temperature is "how much was being drawn
+on average that hour", not an arbitrary instant.

@@ -65,6 +65,31 @@ claim as stated, and note the forecast-blend revision risk instead.
   paginating `/records`) was not tested in this step — flagged for step 2
   (ingestion), not blocking step 1.
 
+## Addendum (step 5, 2026-11-12): the freshest hours of the real-time dataset arrive empty, then fill in later
+
+Discovered while building the incremental `fct_energy_production`: loading
+2026-11-12 and checking `int_eco2mix_checked`'s rejects showed 335/336 rows for
+`date_heure >= 2026-11-12 17:00:00+01` with **every measurement column null**
+(`consommation`, `nucleaire`, `eolien`, etc. — not just one field). The
+`eco2mix-regional-tr` dataset publishes the region/timestamp row immediately,
+before the actual measurements for that slot are available; they get filled in
+a few hours later.
+
+This is a **Complétude** problem at the freshest edge of the real-time feed,
+distinct from the Open-Meteo accuracy risk documented above (that one is about
+values being *revised*; this one is about values being temporarily *absent*,
+then appearing with no change in primary key).
+
+**Consequence for later steps:**
+- Our `int_eco2mix_checked` rule (`consommation_mw is null` -> `negative_consumption`,
+  step 5) already quarantines these correctly — nothing wrong is published.
+- But a naive "only ingest dates we haven't seen yet" orchestration schedule
+  (step 12) would quarantine these rows once and never look at that timestamp
+  again, permanently losing data that the API would have filled in a few hours
+  later. The daily/periodic flow should re-ingest a short trailing window (e.g.
+  the last 24-48h), not just strictly new dates, so dlt's `merge` write
+  disposition can upsert the real values once they appear. Flagged for step 12.
+
 ## Alternatives rejected
 - Loading only the definitive dataset and waiting for it to be updated: it stops
   around 2026-08-31, more than two months of staleness — fails the "data arrives
