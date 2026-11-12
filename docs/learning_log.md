@@ -182,6 +182,70 @@ the problem instead of a human noticing a blank chart weeks later.
 ### Not yet done (flagged for later steps)
 - The bulk `/exports/{format}` endpoint, for an efficient full-history backfill
   (step 10) — still only tested with `/records` pagination so far.
-- Pandera validation at the ingestion entrance (step 3) — right now a malformed
-  API response would only be caught by dlt's own schema checks, not by an
-  explicit quality gate.
+
+---
+
+## Step 3 — Pandera at the entrance (2026-11-12)
+
+### What was done
+- `pipeline/schema.py`: two Pandera `DataFrameSchema`s, one per source.
+  - `RAW_ECO2MIX` uses **`strict=False`**: the definitive and real-time datasets
+    genuinely have different optional columns (ADR 0002 again -- `eolien_terrestre`/
+    `eolien_offshore` only in one, `column_30` vs `column_68`), so treating "an
+    extra column" as an error would make the schema permanently wrong for one of
+    the two sources. `strict=False` still requires every *listed* column to be
+    present -- it only stops flagging the columns we didn't list.
+  - `RAW_WEATHER` uses **`strict=True`**: one source, one stable set of fields, so
+    an unexpected extra/missing column really is worth refusing immediately. This
+    is the direct TP4 case.
+  - `code_insee_region` is checked against `pa.Check.isin(...)`, built from
+    `seeds/regions.csv` at import time rather than a hard-coded list, so there is
+    one single source of truth for "the 12 known regions".
+  - Numeric columns use a reusable `_mostly_between(low, high)` check factory
+    (same idea as TP4's `_mostly_plausible`, generalized since we need it on
+    several columns instead of one).
+- Restructured `pipeline/sources/eco2mix.py` and `weather.py`: the fetch logic
+  is now a plain function (`fetch_eco2mix_rows`, `fetch_weather_rows`) that
+  returns a list instead of a `@dlt.resource` generator. This is what makes
+  Pandera validation possible *before* loading: `pipeline/ingest.py` fetches
+  the whole batch into memory, validates it, and only on success wraps it as
+  a `dlt.resource(...)` and calls `pipeline.run(...)`. On failure it prints
+  `REFUSED: ...` with the failing checks and `sys.exit(1)` -- nothing is
+  loaded, exactly like TP4's `load_raw.py`.
+- Verified with real data:
+  - `.venv\Scripts\python.exe -m pipeline.ingest --start-date 2026-11-11 --end-date 2026-11-12` loads cleanly (1152 eco2mix rows, 576 weather rows), no `REFUSED` message.
+  - A synthetic batch with `code_insee_region: '99'` (a region that doesn't
+    exist) is `REFUSED`, exits 1, and the real call never reaches the dlt load
+    step for either source.
+  - A synthetic weather batch with one extra undeclared column is refused by
+    `strict=True` with `column_in_schema` as the failure.
+  - Re-checked idempotency after the refactor: re-running an overlapping date
+    range still gives `count(*) == count(distinct key)` -- the restructuring
+    didn't change the merge behavior from step 2.
+  - Confirmed mixed-type coercion works: a batch with `eolien` as `'193'`
+    (string, from the definitive dataset) mixed with `eolien` as `207` (int,
+    from real-time) coerces cleanly to `float64` under `coerce=True`, which is
+    exactly the step-1 finding this schema exists to guard against.
+
+### A design choice worth noting
+`pipeline/ingest.py` validates **both** sources before loading **either** one.
+If eco2mix is refused, the script exits before even fetching weather. This
+means one CLI call represents one atomic "day's ingestion" -- a half-loaded
+day (eco2mix in, weather refused) was judged worse than an all-or-nothing
+failure, for a single script invocation. This isn't free: a transient failure
+in one source currently blocks a perfectly good load of the other. Worth
+revisiting once Prefect (step 12) orchestrates each source as its own retryable
+task instead of one combined script run.
+
+### A question the individual exam could ask, answered here
+**"Pandera already validates the data -- why do we still need dbt tests in
+step 5?"** They check different things, not the same thing twice. Pandera
+judges a *whole batch* at the moment of loading: is this file/response shaped
+right, and are most of its values plausible? It can't look at one row in
+isolation against the dataset's history, and it runs once, outside the
+warehouse. dbt's tests run *inside* the warehouse, row by row, every time
+`dbt build` runs, and they can reference other models (`relationships`,
+`unique` across the full history, not just this batch). A single bad
+consumption value in an otherwise fine batch sails through Pandera's
+"95% plausible" check -- it is exactly the kind of thing the row-level
+`int_eco2mix_checked` quarantine rule (step 5) exists to catch.
