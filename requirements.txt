@@ -1,0 +1,8 @@
+dlt[duckdb]>=1.5,<2
+duckdb>=1.1,<2
+dbt-duckdb>=1.9,<2
+pandas>=2.2
+pandera>=0.20
+requests>=2.32
+pytest>=8.0
+ruff>=0.6
