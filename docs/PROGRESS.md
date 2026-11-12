@@ -72,3 +72,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 | # | Brick | Status | Date |
 |---|---|---|---|
 | 0 | Local setup on the desktop | done (PR #2) | 2026-11-12 |
+| 1 | Explore the sources | done | 2026-11-12 |

@@ -1,0 +1,13 @@
+code_insee_region,region_name,city,latitude,longitude
+11,Ile-de-France,Paris,48.8566,2.3522
+24,Centre-Val de Loire,Orleans,47.9025,1.9090
+27,Bourgogne-Franche-Comte,Dijon,47.3220,5.0415
+28,Normandie,Rouen,49.4431,1.0993
+32,Hauts-de-France,Lille,50.6292,3.0573
+44,Grand Est,Strasbourg,48.5734,7.7521
+52,Pays de la Loire,Nantes,47.2184,-1.5536
+53,Bretagne,Rennes,48.1173,-1.6778
+75,Nouvelle-Aquitaine,Bordeaux,44.8378,-0.5792
+76,Occitanie,Toulouse,43.6047,1.4442
+84,Auvergne-Rhone-Alpes,Lyon,45.7640,4.8357
+93,Provence-Alpes-Cote d'Azur,Marseille,43.2965,5.3698
