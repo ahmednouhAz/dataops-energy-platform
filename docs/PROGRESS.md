@@ -35,11 +35,11 @@ Tick an item only when it is actually done and verified, not when it is started.
 ## Orchestration (Prefect)
 - [ ] one scheduled run per day: ingestion -> `dbt build` -> dashboard refresh
 - [ ] automatic retries with delay, an alert on failure, readable logs in the UI
-- [ ] backfill: replay history day by day with a date parameter, without duplicates
+- [x] backfill: replay history day by day with a date parameter, without duplicates (`pipeline/backfill.py`, step 10; year chunks 2013-01-01..2026-08-31, idempotency proved by re-running a chunk and comparing before/after counts)
 
 ## Ingestion (dlt)
-- [x] incremental and idempotent (running twice gives the same result) — proved in step 2 for a 2-day window; full backfill is step 10
-- [ ] history loaded by backfill
+- [x] incremental and idempotent (running twice gives the same result) — proved in step 2 for a 2-day window, and again in step 10 for a full year chunk after the historical backfill
+- [x] history loaded by backfill (16,560,648 rows in `fct_energy_production`, >= 1,000,000 rows requirement met -- step 10)
 
 ## Continuous delivery
 - [ ] Docker images published to GHCR on each tag

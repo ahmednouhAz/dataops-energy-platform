@@ -7,6 +7,7 @@ from pipeline.sources.eco2mix import (
     CUTOVER_DATE,
     DEFINITIVE_ID,
     REALTIME_ID,
+    _normalize_backfill_row,
     _plan_fetches,
 )
 
@@ -34,3 +35,18 @@ def test_range_ending_exactly_on_cutover_uses_definitive_only():
     # ending exactly on the cutover date never touches the real-time dataset.
     plan = _plan_fetches("2026-08-01", CUTOVER_DATE)
     assert plan == [(DEFINITIVE_ID, "2026-08-01", CUTOVER_DATE)]
+
+
+def test_normalize_backfill_row_treats_empty_string_as_missing():
+    assert _normalize_backfill_row({"eolien": ""})["eolien"] is None
+
+
+def test_normalize_backfill_row_treats_dash_as_missing():
+    # Found in real 2013 data: the CSV export uses a literal "-" for a
+    # measurement that wasn't metered yet, distinct from an empty string.
+    assert _normalize_backfill_row({"eolien": "-"})["eolien"] is None
+
+
+def test_normalize_backfill_row_leaves_real_values_alone():
+    row = _normalize_backfill_row({"eolien": "193", "code_insee_region": "75"})
+    assert row == {"eolien": "193", "code_insee_region": "75"}

@@ -19,9 +19,17 @@ select
         when consommation_mw < 0 then 'negative_consumption'
         -- A later load supersedes an earlier one for the same (region, timestamp):
         -- keep the row with the most recent _dlt_load_id, reject the rest.
+        -- _dlt_id (unique per row) breaks ties within the same load -- found
+        -- empirically in the step 10 backfill: France's DST spring-forward
+        -- transition (last Sunday of March, every year) makes the source API
+        -- emit two identical rows -- heure '02:00' and '03:00' -- for the
+        -- same underlying date_heure, both from a single load. Without a
+        -- tie-breaker, which one is "row 1" is undefined by SQL, not just
+        -- unlikely to matter; with one, it's deterministic even though
+        -- (here) the two rows happen to carry the same values either way.
         when row_number() over (
             partition by code_insee_region, date_heure
-            order by _dlt_load_id desc
+            order by _dlt_load_id desc, _dlt_id desc
         ) > 1 then 'duplicate_region_datetime'
     end as reject_reason
 from {{ ref('stg_eco2mix_regional') }}

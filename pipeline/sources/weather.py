@@ -10,7 +10,7 @@ deciding whether to load it at all.
 import csv
 from pathlib import Path
 
-import requests
+from pipeline.http_utils import get_with_retries
 
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 HOURLY_FIELDS = "temperature_2m,wind_speed_10m,shortwave_radiation,cloud_cover"
@@ -24,7 +24,7 @@ def _load_regions():
 
 def _fetch_region(region, start_date, end_date):
     """Call the archive API for one region and yield one row per hour."""
-    resp = requests.get(
+    resp = get_with_retries(
         ARCHIVE_URL,
         params={
             "latitude": region["latitude"],
