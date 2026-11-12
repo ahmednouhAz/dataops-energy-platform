@@ -120,3 +120,68 @@ the "just do it" rule)
 ### Not yet done (flagged for step 2)
 - The bulk `/exports/{format}` endpoint (needed for an efficient backfill instead
   of paginating `/records`) has not been tested yet.
+
+---
+
+## Step 2 — Ingestion with dlt (2026-11-12)
+
+### What was done
+- `pipeline/sources/eco2mix.py`: a dlt resource that pages through the
+  Opendatasoft `/records` endpoint (100 rows/page) and picks the definitive or
+  real-time dataset per date using the 2026-08-31 cutover found in ADR 0002. All
+  the measurement columns that flip type between the two datasets (`eolien`,
+  `pompage`, the battery columns, etc.) are forced to `text` via the resource's
+  `columns=` hint, so `raw.eco2mix_regional` stays consistent no matter which
+  dataset a row came from — same philosophy as TP3's `all_varchar = true`:
+  raw keeps the exact value the API sent, typing happens in staging (step 4).
+- `pipeline/sources/weather.py`: a dlt resource that reads `seeds/regions.csv`
+  and calls the Open-Meteo archive API once per region.
+- `pipeline/ingest.py`: CLI entrypoint, `python -m pipeline.ingest --start-date
+  ... --end-date ...`, loading both sources with `write_disposition="merge"`
+  into `raw` in `dev.duckdb` (path overridable via `DUCKDB_PATH`).
+- `query.py` at the repo root (TP3 pattern): a 10-line read-only query tool.
+  Had to add `sys.stdout.reconfigure(encoding="utf-8")` — Windows' default
+  console encoding (cp1252) can't print DuckDB's box-drawing table characters,
+  so `query.py "show tables"` crashed with `UnicodeEncodeError` until fixed.
+- **Proved idempotency**: loaded 2026-11-10 to 2026-11-12, got 2304 eco2mix rows
+  and 864 weather rows; ran the exact same command again; counts unchanged.
+  Also checked directly for duplicate `(code_insee_region, date_heure)` pairs —
+  zero. This works because of two things together, not one: `primary_key=`
+  tells dlt which columns identify "the same row", and
+  `write_disposition="merge"` tells it to upsert on that key instead of
+  appending. Either one alone wouldn't be enough — a primary key with
+  `write_disposition="append"` would still duplicate rows.
+- Row counts matched hand-calculated expectations: 2 days of real-time data
+  (15-min granularity, confirmed in ADR 0002) × 12 regions = 2304; 3 inclusive
+  days of weather × 24h × 12 regions = 864. Checking this arithmetic by hand
+  is what actually proves the pipeline isn't silently dropping or duplicating
+  rows — a passing run with the wrong count would still print "LOADED" with
+  no error, same lesson as TP1's "a script can run without error and still be
+  wrong".
+- `dev.duckdb` does not show up in `git status` — the existing `*.duckdb` rule
+  in `.gitignore` (from the original project skeleton) already covered it.
+
+### Why this matters for the four promises
+- **Reproductible**: idempotency is what makes "run it again" a safe operation
+  instead of a risk — a flow (step 12) or a human re-running a failed day never
+  creates duplicates.
+- **Fiable**: the type conflict found in step 1 is now actually neutralized at
+  load time, not just written down.
+
+### A question the individual exam could ask, answered here
+**"The eCO2mix API renames `eolien` to `wind_mw` tomorrow. What breaks, and
+where do you fix it?"** Nothing breaks immediately in `raw` — dlt would just
+start loading a new column `wind_mw` (text, by schema evolution) alongside the
+old `eolien`, which would now be `null` for every new row (not an error, a
+silent gap). The real break happens downstream, in staging (step 4), the first
+place that reads `eolien` by name — that model would need its `eolien` column
+cast replaced by `coalesce(wind_mw, eolien)` or renamed outright, and a
+`dbt source freshness`/schema test would be the thing that actually surfaces
+the problem instead of a human noticing a blank chart weeks later.
+
+### Not yet done (flagged for later steps)
+- The bulk `/exports/{format}` endpoint, for an efficient full-history backfill
+  (step 10) — still only tested with `/records` pagination so far.
+- Pandera validation at the ingestion entrance (step 3) — right now a malformed
+  API response would only be caught by dlt's own schema checks, not by an
+  explicit quality gate.

@@ -36,7 +36,7 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [ ] backfill: replay history day by day with a date parameter, without duplicates
 
 ## Ingestion (dlt)
-- [ ] incremental and idempotent (running twice gives the same result)
+- [x] incremental and idempotent (running twice gives the same result) — proved in step 2 for a 2-day window; full backfill is step 10
 - [ ] history loaded by backfill
 
 ## Continuous delivery
@@ -73,3 +73,4 @@ Tick an item only when it is actually done and verified, not when it is started.
 |---|---|---|---|
 | 0 | Local setup on the desktop | done (PR #2) | 2026-11-12 |
 | 1 | Explore the sources | done | 2026-11-12 |
+| 2 | Ingestion with dlt | done | 2026-11-12 |
