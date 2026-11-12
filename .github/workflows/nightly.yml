@@ -1,0 +1,28 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 5 * * *" # 05:00 UTC every day
+  workflow_dispatch:
+
+env:
+  DBT_PROFILES_DIR: .
+
+jobs:
+  rebuild-and-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m tests.validate_fixtures
+      - run: python -m tests.load_fixtures
+      - run: dbt build --target ci
+      - run: dbt docs generate --target ci
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dbt-docs
+          path: target/

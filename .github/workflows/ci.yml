@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  DBT_PROFILES_DIR: .
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  python-tests:
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m pytest
+
+  data-quality:
+    needs: python-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Data contracts on the CI samples
+        run: |
+          datacontract test --server ci contracts/eco2mix_regional.yaml
+          datacontract test --server ci contracts/weather_hourly.yaml
+      - name: Pandera check, then load the samples
+        run: |
+          python -m tests.validate_fixtures
+          python -m tests.load_fixtures
+      - name: dbt build (models, data tests, unit tests)
+        run: dbt build --target ci
+      - name: Report and reference number
+        env:
+          DUCKDB_PATH: ci.duckdb
+        run: python report_md.py 9000 >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the dbt results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dbt-results
+          path: target/run_results.json
