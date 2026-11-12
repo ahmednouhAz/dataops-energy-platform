@@ -1,4 +1,6 @@
 [core]
     remote = storage
 ['remote "storage"']
-    url = ../../dataops-dvc-storage
+    url = s3://dvc-storage
+    endpointurl = http://localhost:9000
+    region = us-east-1

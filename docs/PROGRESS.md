@@ -28,9 +28,9 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [x] a red PR cannot be merged (branch protection on `main`, required checks: lint, gitleaks, python-tests, data-quality; demoed with two closed-without-merging PRs, #13 and #14 -- see `docs/learning_log.md` step 8)
 
 ## Environment
-- [ ] `docker compose up` starts the whole platform
-- [ ] MinIO object storage
-- [ ] `.env.example` committed, `.env` gitignored, no secret in the repo
+- [x] `docker compose up` starts the whole platform (step 11: minio, minio-setup, prefect-server, worker -- more services join progressively in later steps, e.g. Prometheus/Grafana in step 13)
+- [x] MinIO object storage (step 11; the free official image stopped being publishable in Oct 2025, using the free Chainguard build instead -- see ADR 0005)
+- [x] `.env.example` committed, `.env` gitignored, no secret in the repo
 
 ## Orchestration (Prefect)
 - [ ] one scheduled run per day: ingestion -> `dbt build` -> dashboard refresh
