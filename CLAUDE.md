@@ -40,7 +40,7 @@ There is an **individual practical exam** where I work alone on this repo (fix a
 
 ## 2. My setup
 
-- **Main machine: my desktop PC at home** (powerful). OS: **[FILL IN: Windows 11 / macOS / Linux]**. All the heavy work (Docker, full platform, backfill) happens here.
+- **Main machine: my desktop PC at home** (powerful). OS: **Windows 11 Pro**. All the heavy work (Docker, full platform, backfill) happens here.
 - **Laptop at university** (weak): only used through **GitHub Codespaces** in the browser. Both machines are kept in sync with GitHub (`git push` when I stop, `git pull` when I start).
 - GitHub user: `ahmednouhAz`, repo: `dataops-energy-platform` (public).
 - Editor: VS Code with the Claude Code extension (Claude Pro).
@@ -337,8 +337,8 @@ Each step ends with: the verification passed → answers to the questions in `do
 ## 9. Current status (UPDATE AT THE END OF EVERY SESSION)
 
 - **Date of last update:** 2026-11-12
-- **Current step:** 0 — local setup on the desktop PC (moving from Codespaces to local).
-- **Done:** GitHub repo `ahmednouhAz/dataops-energy-platform`; PR #1 merged (skeleton, `requirements.txt`, `docs/business_questions.md`, ADR 0001); both APIs answered correctly with curl.
+- **Current step:** 0 — local setup on the desktop PC — **done**. Next: step 1, explore the sources.
+- **Done:** GitHub repo `ahmednouhAz/dataops-energy-platform`; PR #1 merged (skeleton, `requirements.txt`, `docs/business_questions.md`, ADR 0001); both APIs answered correctly with curl. PR #2 merged (step 0: Python 3.12 installed alongside 3.14, `.venv` created and `requirements.txt` installed, Docker Desktop confirmed running, this folder turned into the real clone of the repo, `.gitignore` fixed to actually exclude `course/` and `.claude/`, `docs/PROGRESS.md` and `docs/learning_log.md` created).
 - **Open issues:** devcontainer doesn't build in Codespaces (see §2) → fix before using the laptop at uni.
 - **Next class session:** [FILL IN]
 - **Project deadline / defense date:** [FILL IN]
