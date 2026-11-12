@@ -34,7 +34,7 @@ There is an **individual practical exam** where I work alone on this repo (fix a
 ### Language
 - Code, comments, commit messages: **English** (as in the TPs).
 - Explanations to me: **English**, simple words. I'm francophone, so French terms from the course (Objectif, Vérification, quarantaine, porte de qualité…) are welcome.
-- Final docs (README, ADRs, runbook, postmortem): **[FILL IN: French or English]**.
+- Final docs (README, ADRs, runbook, postmortem): **English**.
 
 ---
 
