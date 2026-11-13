@@ -33,9 +33,9 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [x] `.env.example` committed, `.env` gitignored, no secret in the repo
 
 ## Orchestration (Prefect)
-- [ ] one scheduled run per day: ingestion -> `dbt build` -> dashboard refresh
-- [ ] automatic retries with delay, an alert on failure, readable logs in the UI
-- [x] backfill: replay history day by day with a date parameter, without duplicates (`pipeline/backfill.py`, step 10; year chunks 2013-01-01..2026-08-31, idempotency proved by re-running a chunk and comparing before/after counts)
+- [x] one scheduled run per day: ingestion -> `dbt build` -> publish (step 12, `flows/daily.py`, `flow.serve(cron="0 6 * * *")`; dashboard refresh joins once step 14 picks a tool -- see ADR 0006)
+- [x] automatic retries with delay, an alert on failure, readable logs in the UI (step 12: `@task(retries=..., retry_delay_seconds=...)`, a Discord `on_failure` hook proven to fire on a real failed run, Prefect UI/API both show every attempt)
+- [x] backfill: replay history day by day with a date parameter, without duplicates (`pipeline/backfill.py`, step 10; year chunks 2013-01-01..2026-08-31, idempotency proved by re-running a chunk and comparing before/after counts; step 12 adds `flows/backfill_flow.py`, the same logic with per-chunk Prefect retries)
 
 ## Ingestion (dlt)
 - [x] incremental and idempotent (running twice gives the same result) — proved in step 2 for a 2-day window, and again in step 10 for a full year chunk after the historical backfill
