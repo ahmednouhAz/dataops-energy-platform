@@ -47,10 +47,9 @@ services:
     restart: "no"
 
   prefect-server:
-    # No flows run against this yet (step 12 wires up the actual daily/
-    # backfill flows); started here so the worker's PREFECT_API_URL already
-    # points somewhere real.
-    image: prefecthq/prefect:3.1.11-python3.12
+    # Runs the daily and backfill flows registered by the worker service
+    # (flows/, step 12).
+    image: prefecthq/prefect:3.9.2-python3.12
     command: ["prefect", "server", "start", "--host", "0.0.0.0"]
     ports:
       - "4200:4200"
@@ -70,11 +69,20 @@ services:
     environment:
       DUCKDB_PATH: ${DUCKDB_PATH}
       PREFECT_API_URL: ${PREFECT_API_URL}
+      PROD_DUCKDB_PATH: ${PROD_DUCKDB_PATH}
+      SERVING_DUCKDB_PATH: ${SERVING_DUCKDB_PATH}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
     depends_on:
       minio:
         condition: service_healthy
       prefect-server:
         condition: service_started
+    # Registers the daily 06:00 UTC schedule and keeps running to execute
+    # it when it fires -- this, not a cron job on the host, is what makes
+    # "one scheduled run per day" actually automatic. `docker compose exec
+    # worker <command>` still works for ad-hoc runs (pytest, dbt, the
+    # backfill flow) regardless of this being the container's main process.
+    command: ["python", "-m", "flows.daily", "--serve"]
 
 volumes:
   minio-data:

@@ -830,3 +830,92 @@ content: it is physically impossible for it to resolve to a different
 build later, even if `latest` moves on. It's less readable, but strictly
 more reproducible, which is the property that actually matters for "my
 platform builds the same way every time."
+
+## Step 12 — Orchestration with Prefect (2026-11-13)
+
+### What was done
+- `flows/daily.py`: `ingest -> dbt build --target prod -> publish`, each
+  step a Prefect `@task` with its own retries, inside one `@flow`.
+  `python -m flows.daily --serve` registers a daily 06:00 UTC schedule
+  (`flow.serve(cron=...)`) and keeps running to execute it -- this is now
+  `docker-compose.yml`'s `worker` service's default command, so the
+  schedule is live as soon as `docker compose up` is, no extra step.
+- `flows/backfill_flow.py`: reuses `pipeline/backfill.py`'s already
+  -proved chunk logic (step 10) with each year chunk as a retried task,
+  invoked on demand, not scheduled -- a backfill is a one-off with a
+  specific range, not a recurring job.
+- `flows/alerts.py`: one `requests.post` to a Discord webhook, as both
+  flows' `on_failure` hook. Logs instead of sending when
+  `DISCORD_WEBHOOK_URL` isn't set, so the flows behave the same with or
+  without a real Discord server wired up -- only the student can create
+  that webhook (it's tied to their own Discord server), so it's never
+  filled in by default.
+- Pinned the Prefect **server** image to the exact same version as the
+  **client** library (`prefecthq/prefect:3.9.2-python3.12` /
+  `prefect==3.9.2`), after the client warned about talking to an older
+  server -- the only exact (not range) pin in `requirements.txt`, because
+  this is the one dependency with a server half that has to match.
+- Pulled `run_ingest` out of `pipeline/ingest.py`'s `main()` so the daily
+  flow's task can call it directly (no subprocess, structured return
+  value instead of scraped stdout); `main()` is now a thin CLI wrapper
+  around the same function.
+
+### A real bug, found only by actually running the flow once
+The first real run of `flows.daily` (live APIs, not a fixture) failed:
+Open-Meteo returned `400 Bad Request` for a date one day in the future.
+Cause: eco2mix's API treats `end_date` as exclusive, Open-Meteo's treats
+it as inclusive, and `run_ingest` was passing one shared `end_date` to
+both -- a latent inconsistency since step 2 that no caller had ever
+actually exercised, because every existing call (always by hand) happened
+to pick values that avoided it. `flows/daily.py`'s automatic "trailing
+window ending tomorrow, to catch today" default was the first caller to
+really ask for data through *today* from both sources in the same call.
+`pipeline/backfill.py` had already solved the identical problem in step
+10 (`_load_weather_chunk` subtracts a day before calling weather); applied
+the same fix inside `run_ingest` itself, so the CLI gets the correction
+too, not just the new flow. Confirmed fixed by re-running: both sources
+fetched cleanly, `dbt build --target prod` reached PASS=39.
+
+### A false alarm, not a pipeline bug
+A backfill-flow smoke test failed with a cryptic dlt configuration error
+on a path (`/tmp/test_backfill.duckdb`) that looked completely normal.
+Cause: Git Bash on Windows silently mangles absolute POSIX paths passed
+through `docker compose exec -e VAR=...` -- the exact same class of
+problem ADR 0005 already hit with `--entrypoint /bin/sh`. A relative path
+worked immediately, no code change needed. Worth remembering for the
+exam: a weird error while testing isn't automatically a bug in the code
+under test.
+
+### Verification
+- `docker compose exec worker python -m flows.daily`: ingested 3408
+  eco2mix + 864 weather rows, `dbt build --target prod` PASS=39,
+  `prod.duckdb` published to `serving.duckdb` (confirmed same byte size).
+- The pre-fix failed run is recorded as `FAILED` in Prefect's own history
+  (`/api/flow_runs/filter`), and the Discord hook logged correctly with no
+  webhook configured -- the alert path really runs on a real failure.
+- `docker compose up -d worker`: logs confirm the flow "is being served
+  and polling for scheduled runs"; `/api/deployments/<id>` confirms
+  `schedule.cron == "0 6 * * *"`, `active: true`.
+- `tests/test_alerts.py` (2 new tests): no webhook -> `requests.post`
+  never called; webhook set -> called once with the exact expected
+  URL/payload. `ruff check .` clean, 17/17 pytest passing.
+
+### Why this matters for the four promises
+- **Automatic**: this is the step where "a human has to remember to run
+  this" actually stops being true -- the schedule lives inside the
+  container that `docker compose up` already starts.
+- **Observable**: every task attempt (including retries) and every flow
+  run's final state are queryable facts now (Prefect's API/UI), not just
+  whatever happened to be printed to a terminal that's since been closed.
+
+### A question the individual exam could ask, answered here
+**"The daily flow is scheduled for 06:00 UTC and it's 06:05 and nothing
+ran -- what do you check, in order?"** (1) Is the `worker` container even
+up (`docker compose ps`) -- if it crashed, no process is polling for
+scheduled runs at all. (2) Is the schedule actually `active` on the
+deployment (`/api/deployments/<id>`) -- `flow.serve()` only registers it
+once, at startup; a code change to the cron string needs a restart to
+take effect. (3) Prefect's own UI/API flow-run history for that
+deployment -- a run that's `Late` or `Crashed` means the scheduler fired
+correctly and something else went wrong (check the task logs next), which
+is a completely different problem from the scheduler never firing at all.
