@@ -1,0 +1,25 @@
+# Override for running a published GHCR image instead of building the
+# worker locally (docker-compose.yml's `build: .`) -- used for the
+# rollback procedure (docs/rollback.md). Both `build:` and `image:` end
+# up set for these services (Compose merges the base file's `build:` in
+# regardless -- there's no documented way to unset a key from an
+# override file, confirmed by testing `build: null`, which is simply
+# ignored); the part that actually matters is running `pull`, never
+# `--build`, so Compose uses the pulled image instead of rebuilding from
+# today's source:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull worker metabase-setup
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# RELEASE_TAG picks exactly which published version runs -- rolling back
+# is changing this one value in .env, re-running the same two commands,
+# nothing else. See docs/rollback.md, including the real limitation this
+# override does NOT fix: the base file's bind mount (`.:/app`, ADR 0005)
+# still shadows the image's baked code with whatever the host's git
+# working tree has checked out, so this override only rolls back the
+# image's baked *dependencies* -- rolling back the *code* too means also
+# checking out the matching git tag on the host.
+services:
+  worker:
+    image: ghcr.io/ahmednouhaz/dataops-energy-platform:${RELEASE_TAG:-latest}
+  metabase-setup:
+    image: ghcr.io/ahmednouhaz/dataops-energy-platform:${RELEASE_TAG:-latest}
