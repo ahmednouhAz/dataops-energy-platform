@@ -56,6 +56,46 @@ services:
     volumes:
       - prefect-data:/root/.prefect
 
+  # Collects metrics from short-lived batch runs (flows/metrics.py) --
+  # the daily/backfill flows push here once when they finish; Prometheus
+  # then scrapes the gateway on its own schedule, same as any other target.
+  pushgateway:
+    image: prom/pushgateway:v1.9.0
+    ports:
+      - "9091:9091"
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - pushgateway
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    environment:
+      # Only used to render the Discord contact point (ADR 0007) -- same
+      # variable the worker service reads, but with a fallback: Grafana's
+      # own validation refuses to start at all if this is empty (found
+      # empirically -- the container just crash-loops), unlike
+      # flows/alerts.py's own graceful "log instead of send". The fallback
+      # is an obviously-fake, harmless placeholder; routing still provisions
+      # cleanly, there's just nowhere real for it to deliver until you put
+      # a real webhook in .env.
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-https://discord.com/api/webhooks/000000000000000000/placeholder}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
   worker:
     build: .
     # Bind-mounting the real repo over the image's own /app means the
@@ -72,10 +112,13 @@ services:
       PROD_DUCKDB_PATH: ${PROD_DUCKDB_PATH}
       SERVING_DUCKDB_PATH: ${SERVING_DUCKDB_PATH}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      PUSHGATEWAY_URL: http://pushgateway:9091
     depends_on:
       minio:
         condition: service_healthy
       prefect-server:
+        condition: service_started
+      pushgateway:
         condition: service_started
     # Registers the daily 06:00 UTC schedule and keeps running to execute
     # it when it fires -- this, not a cron job on the host, is what makes
@@ -87,3 +130,5 @@ services:
 volumes:
   minio-data:
   prefect-data:
+  prometheus-data:
+  grafana-data:

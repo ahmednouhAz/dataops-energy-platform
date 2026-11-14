@@ -1,0 +1,9 @@
+# Routes every alert from the rules below to the Discord contact point --
+# one rule group, one destination, no need for a more elaborate routing
+# tree at this project's size.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: discord-alerts
+    group_by: ["alertname"]

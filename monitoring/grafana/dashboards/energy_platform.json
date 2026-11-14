@@ -1,0 +1,106 @@
+{
+  "uid": "energy-platform-daily",
+  "title": "Energy Platform - Daily Run",
+  "description": "Duration, rows loaded, rejects, and freshness for the daily flow (step 13). Values come from flows/metrics.py, pushed to Pushgateway at the end of every run, success or failure.",
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "editable": true,
+  "refresh": "30s",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Freshness (hours since newest row)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 24 },
+              { "color": "red", "value": 30 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "energy_platform_freshness_hours", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Reject rate",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.1 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "energy_platform_reject_rate", "refId": "A" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Last run status (1 = success)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        { "expr": "energy_platform_run_success", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Run duration",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [
+        { "expr": "energy_platform_run_duration_seconds", "refId": "A", "legendFormat": "duration" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Rows loaded per source (last run)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "energy_platform_rows_loaded", "refId": "A", "legendFormat": "{{source}}" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Rows currently quarantined (eco2mix_rejected)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "targets": [
+        { "expr": "energy_platform_rows_rejected_total", "refId": "A", "legendFormat": "rejected rows" }
+      ]
+    }
+  ]
+}

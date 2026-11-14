@@ -1,0 +1,88 @@
+# The written freshness SLO (docs/adr/0007-observability.md): data older
+# than 30h means a run was missed or failed silently, not just "normal
+# daily lag". Reject-rate threshold mirrors dbt's own
+# assert_reject_rate_below_20_percent singular test (step 6) -- the same
+# number, now watched continuously instead of only at build time.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: energy-platform-slo
+    folder: Energy Platform
+    interval: 1m
+    rules:
+      - uid: freshness-slo-breach
+        title: Freshness SLO breached (data older than 30h)
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "fct_energy_production's newest row is more than 30 hours old -- the daily flow likely missed a run or is failing silently."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: energy_platform_freshness_hours
+              instant: true
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30]
+
+      - uid: reject-rate-slo-breach
+        title: Reject rate SLO breached (over 20%)
+        condition: C
+        for: 5m
+        noDataState: NoData
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "More than 20% of staged eco2mix rows are quarantined -- the same threshold dbt's assert_reject_rate_below_20_percent test guards at build time."
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: energy_platform_reject_rate
+              instant: true
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              refId: B
+              type: reduce
+              expression: A
+              reducer: last
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: "__expr__"
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.2]

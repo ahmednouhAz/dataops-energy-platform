@@ -47,9 +47,9 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [ ] documented rollback
 
 ## Observability
-- [ ] duration, rows, rejects and freshness in Grafana (via Prometheus)
-- [ ] an alert on Discord or Slack
-- [ ] a written freshness objective (SLO)
+- [x] duration, rows, rejects and freshness in Grafana (via Prometheus) (step 13: `flows/metrics.py` pushes to Pushgateway every run, dashboard `monitoring/grafana/dashboards/energy_platform.json`)
+- [x] an alert on Discord or Slack (step 13: Grafana's own Discord contact point + 2 alert rules, separate signal from step 12's Prefect `on_failure` hook -- see ADR 0007)
+- [x] a written freshness objective (SLO) (`docs/slo.md`: 30h, with the reasoning)
 
 ## Governance & security
 - [x] gitleaks in CI (`.github/workflows/ci.yml`, parallel `gitleaks` job)

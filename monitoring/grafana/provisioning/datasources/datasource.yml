@@ -1,0 +1,13 @@
+# Auto-provisions the Prometheus datasource on Grafana startup -- the
+# student never has to click through the "Add data source" UI by hand for
+# this to work the same way on a clean machine.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

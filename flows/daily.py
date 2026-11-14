@@ -20,11 +20,13 @@ import datetime as dt
 import os
 import shutil
 import subprocess
+import time
 
 from prefect import flow, task
 from prefect.logging import get_run_logger
 
 from flows.alerts import discord_failure_hook
+from flows.metrics import push_run_metrics
 from pipeline.ingest import run_ingest
 
 PROD_DUCKDB_PATH = os.environ.get("PROD_DUCKDB_PATH", "prod.duckdb")
@@ -86,13 +88,30 @@ def daily_flow(start_date: str | None = None, end_date: str | None = None) -> No
         start_date = (today - dt.timedelta(days=TRAILING_WINDOW_DAYS)).isoformat()
         end_date = (today + dt.timedelta(days=1)).isoformat()  # exclusive bound covers today
 
-    ingest_task(start_date, end_date)
-    dbt_build_task()
-    publish_task()
-    # No dashboard exists yet (step 14) -- a "refresh" task joins here once
-    # one does; which API call that means depends entirely on which tool
-    # (Metabase vs. Evidence) gets picked, so it's deliberately not stubbed
-    # out blind. See docs/adr/0006-prefect-orchestration.md.
+    started_at = time.monotonic()
+    success = False
+    counts = {"eco2mix_rows": 0, "weather_rows": 0}
+    try:
+        counts = ingest_task(start_date, end_date)
+        dbt_build_task()
+        publish_task()
+        # No dashboard exists yet (step 14) -- a "refresh" task joins here
+        # once one does; which API call that means depends entirely on
+        # which tool (Metabase vs. Evidence) gets picked, so it's
+        # deliberately not stubbed out blind. See ADR 0006.
+        success = True
+    finally:
+        # Push metrics on success AND failure (step 13, ADR 0007) -- a
+        # failed run should show up as freshness/reject-rate going stale
+        # in Grafana, a separate, data-level signal from "the run crashed"
+        # (the Discord on_failure hook above already covers that one).
+        push_run_metrics(
+            SERVING_DUCKDB_PATH,
+            duration_seconds=time.monotonic() - started_at,
+            eco2mix_rows=counts["eco2mix_rows"],
+            weather_rows=counts["weather_rows"],
+            success=success,
+        )
 
 
 def main():

@@ -1,0 +1,22 @@
+# Grafana's built-in "discord" contact point type posts directly in the
+# format Discord's webhook API expects -- no extra code needed, unlike
+# flows/alerts.py's own hand-written POST (that one fires on "the flow
+# itself crashed"; this one fires on "the published data looks wrong",
+# a signal only Grafana/Prometheus can see -- see ADR 0007).
+#
+# ${DISCORD_WEBHOOK_URL} is substituted from the grafana container's own
+# environment at startup (same variable docker-compose.yml already passes
+# to the worker service) -- empty by default, same as flows/alerts.py:
+# the alert rule still evaluates and shows up in the UI either way, it
+# just has nowhere to send a notification until a real webhook is set.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: discord-alerts
+    receivers:
+      - uid: discord-webhook
+        type: discord
+        settings:
+          url: ${DISCORD_WEBHOOK_URL}
+          use_discord_username: true
