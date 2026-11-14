@@ -1,0 +1,35 @@
+# pip install pre-commit && pre-commit install --hook-type pre-commit --hook-type commit-msg
+# (one-time per clone; CLAUDE.md section 6's git workflow already follows
+# conventional commits by hand -- this just catches it before a commit
+# happens, instead of at review time.)
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 3.2.5
+    hooks:
+      - id: sqlfluff-lint
+        files: ^(models|data_tests|seeds)/.*\.sql$
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.6.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
+        # Matches the types CLAUDE.md section 6 already names for branch
+        # prefixes (feat/ fix/ chore/ docs/ test/ ci/ refactor/).
+        args: ["feat", "fix", "chore", "docs", "test", "ci", "refactor"]

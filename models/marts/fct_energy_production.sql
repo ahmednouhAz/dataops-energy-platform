@@ -7,12 +7,12 @@
 }}
 
 select
-    code_insee_region,
-    date_heure,
-    energy_source,
-    production_mw
-from {{ ref('int_energy_production_unpivoted') }}
+    p.code_insee_region,
+    p.date_heure,
+    p.energy_source,
+    p.production_mw
+from {{ ref('int_energy_production_unpivoted') }} as p
 
 {% if is_incremental() %}
-where date_heure > (select max(date_heure) from {{ this }})
+where p.date_heure > (select max(prev.date_heure) from {{ this }} as prev)
 {% endif %}

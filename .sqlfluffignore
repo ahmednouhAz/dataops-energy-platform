@@ -1,0 +1,7 @@
+# The lightweight jinja templater (no live dbt connection) can't resolve
+# custom macros like mask_pii() -- it would need the heavier `dbt`
+# templater for that, which needs a working profile/connection at lint
+# time. Not worth it for one demo file (step 16); excluded here instead.
+models/governance/
+target/
+dbt_packages/

@@ -12,4 +12,4 @@
 ## Alternatives rejected
 - Bikes (GBFS): no history to backfill, so reaching 1M rows would take weeks of collection.
 - Air quality (OpenAQ): needs an API key and has rate limits.
-- Airflow: the industry standard, but heavy (scheduler, web server, metadata database) for a solo project. 
+- Airflow: the industry standard, but heavy (scheduler, web server, metadata database) for a solo project.
