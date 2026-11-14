@@ -60,12 +60,12 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [x] a dashboard (Metabase or Evidence) answering the 3 business questions, reading only from the marts (step 14: Metabase + community DuckDB driver -- Evidence's self-host path has no local-DuckDB-file connector, found while trying it; see ADR 0008). Declared as a dbt exposure (`models/exposures.yml`).
 
 ## Final deliverables
-- [ ] repo with `main` in defense state and a tag `v1.x`
-- [ ] README that lets a stranger run everything
-- [ ] architecture diagram
-- [ ] ADRs: one page per important choice (what, why, rejected alternatives) in `docs/adr/`
-- [ ] runbook: what to do when the alert fires (`docs/runbook.md`)
-- [ ] postmortem of the game day (`docs/postmortem.md`)
+- [ ] repo with `main` in defense state and a tag `v1.x` (step 15's `v0.1.0`/`v0.1.1` were release-mechanism tests, not the final tag -- that comes once the roadmap is actually complete)
+- [x] README that lets a stranger run everything (step 17)
+- [x] architecture diagram (step 17, `docs/architecture.md`)
+- [x] ADRs: one page per important choice (what, why, rejected alternatives) in `docs/adr/` (10 so far)
+- [x] runbook: what to do when the alert fires (`docs/runbook.md`, step 17)
+- [x] postmortem of the game day (`docs/postmortem.md`, step 17 -- 3 scenarios rehearsed live and timed, 1 reused from real step-8 evidence, 1 deliberately not physically performed with a stated reason)
 
 ---
 
