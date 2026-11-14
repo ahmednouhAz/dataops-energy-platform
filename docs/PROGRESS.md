@@ -57,7 +57,7 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [ ] owner + retention in each contract; documented lineage
 
 ## Consumption
-- [ ] a dashboard (Metabase or Evidence) answering the 3 business questions, reading only from the marts
+- [x] a dashboard (Metabase or Evidence) answering the 3 business questions, reading only from the marts (step 14: Metabase + community DuckDB driver -- Evidence's self-host path has no local-DuckDB-file connector, found while trying it; see ADR 0008). Declared as a dbt exposure (`models/exposures.yml`).
 
 ## Final deliverables
 - [ ] repo with `main` in defense state and a tag `v1.x`

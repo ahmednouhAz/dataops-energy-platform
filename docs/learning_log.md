@@ -1004,3 +1004,85 @@ runs, which looks identical to "every run technically succeeded" from a
 metrics-only view, but means nothing has refreshed `serving.duckdb` at
 all -- exactly the gap this step's SLO alert exists to catch, since
 Prefect's own `on_failure` hook never had anything to fire on.
+
+## Step 14 — Dashboard (2026-11-14)
+
+### What was done
+- Tried **Evidence** first (the plan's other option, and the one that
+  seemed like the obvious fit for a DuckDB-first project): scaffolded a
+  real project (`npx degit evidence-dev/template`) and read its current
+  self-host docs directly, rather than trusting what I remembered about
+  it. Found it had moved to a login-gated cloud product (Evidence
+  Studio) for the scaffolded template, and that the still-open-source
+  core's self-host connector list has no local-DuckDB-file option at
+  all (Snowflake, Postgres, BigQuery, ClickHouse, MotherDuck cloud...
+  but not a plain `.duckdb` file). Documented the exact finding and
+  pivoted -- see ADR 0008.
+- **Metabase** instead, self-hosted via the community
+  `ghcr.io/motherduckdb/metabase-duckdb` image (official Metabase has no
+  DuckDB driver of its own). `docker-compose.yml` adds `metabase` (port
+  3001 -- 3000 was already Grafana's) and a one-shot `metabase-setup`
+  job.
+- `scripts/setup_metabase.py`: calls Metabase's own REST API (found by
+  testing the calls directly with `curl` first, not guessed) to create
+  the admin user, add the DuckDB connection pointed at
+  `SERVING_DUCKDB_PATH`, and build 3 native-SQL cards + 1 dashboard
+  answering `docs/business_questions.md`'s 3 questions. Idempotent:
+  every step checks for an existing match before creating one.
+- `models/exposures.yml`: declares the dashboard as a dbt exposure,
+  `depends_on` naming exactly the 4 marts it reads.
+- A real model change the dashboard needed: business question 3 (which
+  regions depend on imports at their consumption peak) needs
+  `ech_physiques_mw` alongside consumption at the same region/hour grain
+  -- not in any existing mart. Added `ech_physiques_mw_avg` to
+  `int_consumption_hourly` and `fct_consumption_weather` rather than
+  inventing a new mart for one column at a grain that already exists.
+
+### Two real problems, found only by actually running it
+- **`AccessDeniedException` on Metabase's own app database.** Mounted a
+  fresh named volume at `/metabase-data` -- a path I invented, not one
+  the image's Dockerfile ever created -- so Docker couldn't infer
+  correct ownership for it, and the non-root `metabase` user couldn't
+  write there. Metabase crashed before even reaching the setup wizard.
+  Fixed by mounting the volume at `/home/metabase` instead (the image's
+  own working directory, already correctly owned) -- the same root
+  cause as step 11's MinIO non-root-UID finding, a different image.
+- **Port 3000 collision with Grafana** (step 13). Mapped Metabase to
+  host port 3001 instead.
+
+### Verification
+- `docker compose up -d metabase metabase-setup` on a wiped
+  `metabase-data` volume: Metabase `(healthy)`, setup job exits with
+  `Dashboard ready: http://metabase:3000/dashboard/2`.
+- Re-ran the setup job a second time: identical dashboard id, no
+  duplicate database/cards/dashboard -- idempotency proved directly.
+- All 3 cards executed via `/api/card/<id>/query`: `status: completed`,
+  real rows (e.g. question 3's query correctly returning each region's
+  actual peak hour, peak MW, and import/export role at that hour).
+- `dbt build`: PASS=39/40 (including the new exposure) with the new
+  `ech_physiques_mw_avg` column.
+
+### Why this matters for the four promises
+- **Reproductible**: Evidence looked like the "obviously correct"
+  choice going in; actually trying it instead of assuming is what
+  caught the login/connector problem before it became load-bearing. The
+  final Metabase setup needs zero manual clicking on a clean machine,
+  same bar as every other service in this stack.
+- **Reliable**: the dashboard reads the *published* copy
+  (`serving.duckdb`), never the file dbt is actively writing to -- the
+  same write-audit-publish split (step 11/12/13) applied to its fourth
+  reader now.
+
+### A question the individual exam could ask, answered here
+**"The teacher adds a 4th business question at the defense. Walk through
+what changes."** If the new question is answerable from existing marts:
+add one more entry to `CARDS` in `scripts/setup_metabase.py`
+(name/query/display), re-run `docker compose up` (or
+`docker compose run --rm metabase-setup`) -- idempotent, so it only adds
+the one new card and appends it to the dashboard, nothing else moves.
+If it needs a column no mart has yet (like question 3 needed
+`ech_physiques_mw_avg`): that's a dbt model change first (which mart, or
+a new one, and why), `dbt build`, *then* the card. The distinction
+matters: a dashboard change is cheap and reversible; a model change
+needs the same scrutiny (tests, description, a reason not to misuse an
+existing mart) as any other step in this project.
