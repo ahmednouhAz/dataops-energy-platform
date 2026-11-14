@@ -1226,3 +1226,68 @@ it is; (3) add a unit test pinning the new column's expected masked
 output, same pattern `models/governance/governance.yml` already
 demonstrates -- the mechanism from this step gets reused, not
 reinvented.
+
+## Step 17 — Docs & game day (2026-11-14)
+
+### What was done
+- `README.md` (what the platform is, one-command run instructions,
+  service URLs, links to every other doc), `docs/architecture.md` (a
+  Mermaid diagram plus the reasoning already scattered across
+  `docs/adr/`, now shown as one picture), `docs/runbook.md` (a
+  diagnose-fix-verify procedure for each of the 3 alerts that actually
+  exist).
+- A real game day: 3 scenarios rehearsed live and timed (API down, bad
+  data, a wrong rule), 1 reused from real evidence already produced in
+  step 8 (renamed column -- PR #13) rather than repeated identically,
+  and 1 deliberately *not* physically performed (full disk -- genuinely
+  destructive to rehearse safely on this machine), with the reasoning
+  for that choice written down rather than silently skipped. Full
+  detail, including exact timestamps, in `docs/postmortem.md`.
+
+### A real finding from the game day, not fixed on the spot
+Scenario 1 (API down) took **3 minutes 16 seconds** from flow start to
+the Discord alert firing -- dominated by Prefect's own task-level retry
+(`ingest_task(retries=3, retry_delay_seconds=60)`, 180s alone) stacked
+on top of `pipeline/http_utils.py`'s lower-level HTTP retries. Both
+layers are individually reasonable (ADR 0006), but their combination
+means a real, sustained outage goes undetected for over three minutes
+even with every retry mechanism "working as designed." Left as an open
+question in the postmortem rather than changed reflexively -- a
+deliberate decision about detection-speed vs. tolerance-for-blips, not
+a bug.
+
+### Verification
+- Scenario 1 (API down): timestamps extracted directly from the real
+  Prefect run log, not estimated -- `12:33:28.367` start to
+  `12:36:44.586` alert logged.
+- Scenario 2 (bad data): `1.36s` to Pandera refusal, confirmed nothing
+  loaded.
+- Scenario 3 (wrong rule): `4.43s` to `dbt build` reporting
+  `PASS=17 ERROR=1 SKIP=25`; reverted immediately after, confirmed
+  `git status` clean and a full `dbt build` passing again
+  (`PASS=42/43`).
+
+### Why this matters for the four promises
+- **Observable**, proven rather than just built: the whole point of
+  this step is confirming the mechanisms from steps 10-16 actually
+  catch real, deliberately-introduced problems, with real numbers, not
+  just existing in theory.
+- **Reliable**: the full-disk scenario's honesty (reasoned through,
+  not verified) is itself a reliability property worth keeping visible
+  -- a postmortem that claims more rigor than it actually has would be
+  the least reliable thing in this whole document.
+
+### A question the individual exam could ask, answered here
+**"Why does scenario 3 take 4 seconds and scenario 1 takes over 3
+minutes, for what's conceptually the same kind of thing (a broken
+pipeline)?"** They're not the same kind of thing. Scenario 3 is a local
+`dbt build` -- one process, no network, no retries, fails the instant
+the SQL runs. Scenario 1 goes through the actual production detection
+path: HTTP-level retries, then Prefect's own task-level retries, each
+layer adding real wall-clock delay by design (so a single flaky request
+or a short blip doesn't trigger a false alarm). The individual exam's
+version of this question is really asking: do you know which of your
+checks run locally in seconds (lint, pytest, dbt build on a sample) and
+which only surface in minutes through the full orchestrated path --
+and that's exactly why CI's `data-quality` job (step 8) exists to catch
+what it can before anything reaches orchestration at all.
