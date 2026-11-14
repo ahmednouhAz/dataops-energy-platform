@@ -1393,3 +1393,33 @@ limitations -- is the actual skill; running the linter is not.
   specific column/type mismatch named; revert confirmed clean.
 - CI timing: pulled directly from `gh run view --json jobs`, not
   estimated from memory.
+
+### Third batch: dbt-utils, used for real
+
+- `packages.yml` adds `dbt-labs/dbt_utils`. `dim_date.sql` now builds
+  its date spine with `dbt_utils.date_spine()` instead of the
+  hand-rolled `generate_series` + `CROSS JOIN` it used since step 5 --
+  the one model already doing by hand exactly what that macro is built
+  for, so this replaces maintained-by-us code with a
+  tested, community-maintained equivalent, not a token "install the
+  package and don't use it."
+- Read the macro's own source (`dbt_packages/dbt_utils/macros/sql/date_spine.sql`)
+  before using it, rather than guessing from its name: `date_spine()`
+  evaluates its start/end date arguments in their own standalone
+  statement at compile time, so they can't be a CTE reference the way
+  the old `with bounds as (...)` pattern used -- switched to scalar
+  subqueries instead.
+- Same sqlfluff limitation as `models/governance/` (ADR 0011): the
+  lightweight jinja templater can't resolve a package macro either.
+  While fixing the exclusion, found `.sqlfluffignore` doesn't support
+  an inline `# comment` after a pattern the way `.gitignore` does -- the
+  first attempt silently failed to exclude anything until the comments
+  were moved onto their own lines.
+
+### Verification (third batch)
+- `dbt build --select dim_date`: `PASS=3`. Full `dbt build
+  --full-refresh`: `PASS=42/43`, unchanged.
+- Row count/bounds check: `5063` rows, `2013-01-01` to `2026-11-11` --
+  matches the dataset's real range, confirming the swap didn't quietly
+  change what dates end up in the dimension.
+- `sqlfluff lint`: clean, after fixing the ignore-file mistake.
