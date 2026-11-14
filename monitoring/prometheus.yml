@@ -1,0 +1,11 @@
+# Scrapes the Pushgateway, not the pipeline directly -- the daily/backfill
+# flows are short-lived batch jobs, not long-running HTTP servers with a
+# /metrics endpoint to poll (see flows/metrics.py).
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: pushgateway
+    honor_labels: true # keep the job/instance labels the pipeline itself set, not Prometheus's own
+    static_configs:
+      - targets: ["pushgateway:9091"]

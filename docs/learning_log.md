@@ -919,3 +919,88 @@ take effect. (3) Prefect's own UI/API flow-run history for that
 deployment -- a run that's `Late` or `Crashed` means the scheduler fired
 correctly and something else went wrong (check the task logs next), which
 is a completely different problem from the scheduler never firing at all.
+
+## Step 13 — Observability (2026-11-14)
+
+### What was done
+- `flows/metrics.py`: pushes 6 gauges (duration, rows loaded per source,
+  rows rejected, reject rate, freshness hours, run success) to a
+  Prometheus Pushgateway at the end of every daily run -- success *and*
+  failure, via a `try/finally` in `daily_flow` (`flows/daily.py`).
+- `docker-compose.yml`: added `pushgateway`, `prometheus` (scrapes the
+  gateway), `grafana` (one provisioned datasource, one dashboard, one
+  Discord contact point, two alert rules --
+  `monitoring/grafana/provisioning/`, `monitoring/grafana/dashboards/`).
+- `docs/slo.md`: the written freshness SLO -- 30 hours, derived from the
+  06:00 UTC schedule plus a 6-hour buffer, with the reasoning spelled out.
+- **Deliberately two separate alert paths, not one**: Prefect's
+  `on_failure` hook (step 12) fires when a flow *run* crashes; Grafana's
+  alert rules (this step) fire on the *published data's state*
+  (freshness > 30h, reject rate > 20%) -- a signal the orchestrator
+  literally can't see on its own, e.g. the whole `worker` container not
+  running at all, so there's no flow run to even fail.
+
+### Three real bugs, found only by actually pushing a real run's metrics
+- **Grafana crash-looped on an empty `DISCORD_WEBHOOK_URL`.** Its Discord
+  contact point validation refuses to start at all with an empty URL
+  (`could not find webhook url property in settings`) -- a much harsher
+  failure mode than `flows/alerts.py`'s own graceful "log instead of
+  send" for the exact same "not configured yet" situation. Fixed with a
+  Docker Compose default-value fallback
+  (`${DISCORD_WEBHOOK_URL:-https://...placeholder}`) scoped to the
+  `grafana` service only, so the worker's already-correct empty-by-default
+  behavior didn't need to change.
+- **`Duplicated timeseries in CollectorRegistry` on the first real
+  push.** Built two separate `Gauge(...)` objects with the same metric
+  name (one per source) instead of one `Gauge` with two `.labels()`
+  calls -- `prometheus_client` registers a name at construction time, so
+  the second object collided. One-line fix: construct once, label twice.
+- **`Binder Error: Catalog "prod" does not exist!` -- on views only,
+  never on tables, same file, same connection style.** `dbt build
+  --target prod` compiles a view's cross-schema references (e.g.
+  `stg_eco2mix_regional`'s `source()` call) as `prod.raw....`, where
+  `prod` is the dbt **target name**, not anything derived from the file
+  path. `publish_task`'s raw file copy carries that compiled SQL along
+  with it; a plain `duckdb.connect(serving_duckdb_path)` has no catalog
+  literally named `prod`, so views break while tables (no stored
+  cross-catalog reference) read back fine -- which is exactly what made
+  this confusing to diagnose at first. Fixed by attaching the file under
+  the matching alias instead: `attach '<path>' as prod (read_only)` then
+  `use prod`, the same thing dbt-duckdb does internally.
+
+### Verification
+- `docker compose up -d grafana`: stays up with the fallback (previously
+  `Exited (1)` without it).
+- Dashboard, alert rules, and contact point all confirmed loaded via
+  Grafana's own provisioning API
+  (`/api/search`, `/api/v1/provisioning/alert-rules`,
+  `/api/v1/provisioning/contact-points`).
+- Ran `flows.daily` for real: metrics pushed cleanly, then confirmed via
+  Prometheus's query API with real numbers -- freshness ≈ 0.36h, rows
+  loaded 3124 (eco2mix) / 864 (weather), reject rate ≈ 0.127.
+- `tests/test_metrics.py` (5 new unit tests, tiny hand-built DuckDB
+  fixtures): missing file, empty table, and a known 2/10 reject-rate
+  fixture all give the expected answer. `ruff check .` clean, 22 pytest
+  tests passing.
+
+### Why this matters for the four promises
+- **Observable**: this is the step that actually delivers the promise's
+  own wording -- "we always know whether data is fresh, complete and
+  correct" -- as a number you can watch over time, not just a pass/fail
+  at build time.
+- **Reliable**: the freshness SLO catches a failure mode step 12's own
+  alerting structurally cannot: the orchestrator container itself not
+  running. A flow that never got a chance to fail can't trigger an
+  `on_failure` hook; a metric that simply stops updating can still trigger
+  an alert.
+
+### A question the individual exam could ask, answered here
+**"Grafana shows the freshness panel stuck at the same value for two
+days. Prefect's UI shows no failed runs at all. What's going on?"** Check
+whether there have been any runs *at all* in that window, not just
+whether any failed -- `docker compose ps worker` and the deployment's
+flow-run history. A container that crashed or was never started has zero
+runs, which looks identical to "every run technically succeeded" from a
+metrics-only view, but means nothing has refreshed `serving.duckdb` at
+all -- exactly the gap this step's SLO alert exists to catch, since
+Prefect's own `on_failure` hook never had anything to fire on.
