@@ -1,0 +1,29 @@
+[sqlfluff]
+dialect = duckdb
+templater = jinja
+max_line_length = 120
+# Excluded, deliberately, not because they're wrong:
+# - AM04/RF02/RF03: this project's style (TP3's own convention) is
+#   `select *, case ... end as reject_reason` in intermediate models and
+#   unqualified columns in single-table selects -- both read as
+#   "ambiguous" to sqlfluff's stricter defaults, but neither is actually
+#   ambiguous here, and qualifying only *some* references (tried this on
+#   int_eco2mix_checked.sql) makes RF03 flag the *rest* as
+#   "inconsistent", which is a worse state than before. Rewriting every
+#   model to fully qualify every column is a bigger, riskier change than
+#   this bonus item is worth -- see docs/adr/0011-sqlfluff.md.
+# - LT01/LT02/LT09/ST06: pure formatting preferences (indent width,
+#   one-target-per-line, select-target ordering) that would mean
+#   reformatting every existing model for no functional benefit.
+# - RF04: flags `d`/other short aliases as "keywords" in some contexts;
+#   not worth renaming every alias in this codebase for.
+exclude_rules = AM04, RF02, RF03, RF04, LT01, LT02, LT09, ST06
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = true
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = lower
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = lower

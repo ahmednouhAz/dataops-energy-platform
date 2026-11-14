@@ -1291,3 +1291,68 @@ checks run locally in seconds (lint, pytest, dbt build on a sample) and
 which only surface in minutes through the full orchestrated path --
 and that's exactly why CI's `data-quality` job (step 8) exists to catch
 what it can before anything reaches orchestration at all.
+
+## Step 18 — Bonus (in progress, 2026-11-14)
+
+### What was done (first batch, cheapest-first)
+- `.pre-commit-config.yaml`: `trailing-whitespace`, `end-of-file-fixer`,
+  `check-yaml`, `check-added-large-files`, `check-merge-conflict`,
+  `ruff --fix`, `sqlfluff-lint`, and a `conventional-pre-commit`
+  commit-msg hook restricted to the exact types CLAUDE.md section 6
+  already names (`feat`/`fix`/`chore`/`docs`/`test`/`ci`/`refactor`) --
+  this project's own git history already follows that convention by
+  hand; the hook just catches a slip before it happens.
+- `.sqlfluff` + `.sqlfluffignore`: lints every model, singular test, and
+  seed. Investigated every finding rather than blanket-suppressing:
+  fixed one real unqualified-reference case for real
+  (`fct_energy_production.sql`), tried and *reverted* the same fix on
+  `int_eco2mix_checked.sql` after it made things worse (partial
+  qualification triggered new "inconsistent qualification" warnings on
+  every other column in the same rule chain), and excluded pure-style
+  rules and one genuine parser limitation (a custom macro call the
+  lightweight jinja templater can't resolve) with the reasoning written
+  into the config files themselves.
+- Re-verified the standing devcontainer issue (open since step 0) by
+  actually running it, not just re-pinning a tag and hoping: pulled the
+  pinned base image, ran the exact `postCreateCommand` against this
+  repo in a real container. Found a real gap this way --
+  `pre-commit` wasn't in `requirements.txt`, so the devcontainer's own
+  setup command would have failed with "command not found" on a truly
+  clean machine (the local venv already had it from manual testing
+  earlier, which hid the gap). Fixed, re-verified end to end.
+
+### Why "verified, not just re-asserted" mattered here
+The devcontainer issue had been sitting in CLAUDE.md as a TODO since
+step 0 with no evidence either way. Actually running the failure points
+found a real, fixable problem (missing requirements.txt entry) that
+re-reading the config alone would never have caught -- consistent with
+every other finding this whole session, where the bugs worth
+documenting were the ones found by running something, not by reasoning
+about it.
+
+### Verification
+- `sqlfluff lint models data_tests seeds`: 0 findings with the final
+  config.
+- `pre-commit run --all-files`: all 7 hooks pass.
+- `conventional-pre-commit` tested directly both ways: rejects a
+  non-conventional message, accepts a real one.
+- Devcontainer: `docker pull` + `docker run` with the exact
+  `postCreateCommand` (including the new `pre-commit install` step)
+  succeeds end to end, confirmed by a `POSTCREATE_OK` marker reaching
+  the end of the command chain.
+- `dbt build`: `PASS=42/43` unchanged. `ruff check .`, full `pytest`:
+  still green.
+
+### A question the individual exam could ask, answered here
+**"You added a linter and it flagged 30 things. Why did you only fix
+one?"** Because most of the 30 weren't bugs -- they were a stricter
+tool's default style preferences clashing with an already-correct,
+already-reviewed, already-tested codebase that follows the course's own
+established conventions. Fixing a linter finding just because the
+linter found it, without checking whether it's a real problem, is how
+a "bonus" item quietly turns into reformatting the entire SQL layer for
+no functional gain -- and in one case (the reverted
+`int_eco2mix_checked.sql` attempt) actively made the code harder to
+read by qualifying some references but not others. The judgment call
+-- which findings are real, which are style, which are tooling
+limitations -- is the actual skill; running the linter is not.

@@ -16,8 +16,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
+      - run: pip install ruff sqlfluff
       - run: ruff check .
+      - run: sqlfluff lint models data_tests seeds
 
   gitleaks:
     runs-on: ubuntu-latest
