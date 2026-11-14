@@ -2,6 +2,7 @@ select
     c.code_insee_region,
     c.observed_hour,
     c.consommation_mw_avg,
+    c.ech_physiques_mw_avg,
     w.temperature_c,
     w.wind_speed_kmh,
     w.cloud_cover_pct

@@ -111,6 +111,12 @@ models:
         description: Average electricity consumption in MW over this region/hour.
         data_tests:
           - not_null
+      - name: ech_physiques_mw_avg
+        description: >
+          Average physical grid exchange in MW over this region/hour.
+          RTE's own sign convention: positive means this region is a net
+          exporter to the rest of the grid at that hour, negative means
+          it's a net importer (depends on other regions to meet demand).
       - name: temperature_c
         description: Hourly temperature in Celsius, from Open-Meteo, for this region's representative city.
       - name: wind_speed_kmh

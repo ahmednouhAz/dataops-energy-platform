@@ -96,6 +96,47 @@ services:
     depends_on:
       - prometheus
 
+  # The dashboard (step 14, ADR 0008). Official Metabase has no DuckDB
+  # driver; this image bundles the community-maintained one (MotherDuck)
+  # on top of it. Reads SERVING_DUCKDB_PATH read-only -- the published
+  # copy, never prod.duckdb -- same write-audit-publish split as every
+  # other reader of the warehouse.
+  metabase:
+    image: ghcr.io/motherduckdb/metabase-duckdb:0.63.17-duckdb1.5.6.0
+    volumes:
+      # /home/metabase is the image's own working directory, already
+      # owned by its non-root "metabase" user -- mounting a fresh named
+      # volume there lets Docker copy and preserve that ownership, unlike
+      # a path we invent ourselves (found by hitting AccessDeniedException
+      # on a /metabase-data path that doesn't exist in the image at all).
+      - metabase-data:/home/metabase
+      - .:/data:ro
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # One-shot job: creates the admin user, adds the DuckDB connection, and
+  # builds the 3 business-question cards + dashboard via Metabase's own
+  # API (ADR 0008) -- no manual click-through needed for a newcomer.
+  metabase-setup:
+    build: .
+    volumes:
+      - .:/app
+    environment:
+      METABASE_URL: http://metabase:3000
+      METABASE_ADMIN_EMAIL: ${METABASE_ADMIN_EMAIL}
+      METABASE_ADMIN_PASSWORD: ${METABASE_ADMIN_PASSWORD}
+    depends_on:
+      metabase:
+        condition: service_healthy
+    command: ["python", "scripts/setup_metabase.py"]
+    restart: "no"
+
   worker:
     build: .
     # Bind-mounting the real repo over the image's own /app means the
@@ -132,3 +173,4 @@ volumes:
   prefect-data:
   prometheus-data:
   grafana-data:
+  metabase-data:

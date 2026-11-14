@@ -1,0 +1,22 @@
+version: 2
+
+exposures:
+  - name: energy_platform_dashboard
+    label: Energy Platform Dashboard
+    type: dashboard
+    maturity: medium
+    url: "{{ var('metabase_url', 'http://localhost:3001') }}/dashboard/2"
+    description: >
+      Metabase dashboard (step 14, ADR 0008) answering the 3 business
+      questions in docs/business_questions.md: renewable share by region
+      and month, consumption's response to temperature, and peak-hour
+      grid dependency. Built and kept idempotent by
+      scripts/setup_metabase.py. Reads only from marts, never staging or
+      intermediate models directly.
+    depends_on:
+      - ref('fct_energy_production')
+      - ref('fct_consumption_weather')
+      - ref('dim_region')
+      - ref('dim_energy_source')
+    owner:
+      name: ahmednouhAz (solo data platform owner)
