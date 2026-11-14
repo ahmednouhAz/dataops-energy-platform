@@ -1356,3 +1356,40 @@ no functional gain -- and in one case (the reverted
 read by qualifying some references but not others. The judgment call
 -- which findings are real, which are style, which are tooling
 limitations -- is the actual skill; running the linter is not.
+
+### Second batch: model contracts, CI timing
+
+- **`contract: enforced`** on the 5 marts with an explicit column list
+  already (`dim_region`, `dim_energy_source`, `dim_date`,
+  `fct_energy_production`, `fct_consumption_weather`) -- locks each
+  one's column names, types, and order; a mismatch fails the build
+  loudly instead of silently changing shape under the dashboard.
+  **Not** applied to `eco2mix_rejected`, which deliberately keeps
+  `select *` (a contract would mean giving up exactly why that model is
+  written that way).
+- Found a real incompatibility by running it, not by reading dbt's
+  docs first: `fct_energy_production`'s `on_schema_change='sync_all_columns'`
+  is rejected outright once a contract is enforced (dbt requires
+  `'append_new_columns'` or `'fail'`) -- changed to `'fail'`, which is
+  also the more correct choice for a contracted model. Also found that
+  a `--` SQL comment inside a Jinja `config(...)` call is a compilation
+  error (Jinja parses the arguments as an expression, not SQL) -- used
+  a `{# ... #}` Jinja comment instead.
+- **Proved the contract actually catches something**: changed
+  `dim_region.latitude`'s declared type from `double` to `integer`,
+  `dbt build --select dim_region` failed immediately with the exact
+  mismatch reported (column, both types, the reason). Reverted,
+  confirmed clean, rebuilt -- `PASS=42/43` again.
+- **CI under 5 minutes**: already true, just verified and measured
+  rather than assumed -- the most recent PR's full CI run (4 jobs,
+  `lint`->`python-tests`->`data-quality` chained, `gitleaks` parallel)
+  took **2 minutes 53 seconds** wall-clock, start of the first job to
+  end of the last.
+
+### Verification (second batch)
+- `dbt build --full-refresh`: `PASS=42/43`, all 5 contracted marts
+  validate.
+- The deliberate contract break: failed exactly as expected, with the
+  specific column/type mismatch named; revert confirmed clean.
+- CI timing: pulled directly from `gh run view --json jobs`, not
+  estimated from memory.
