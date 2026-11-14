@@ -1394,32 +1394,40 @@ limitations -- is the actual skill; running the linter is not.
 - CI timing: pulled directly from `gh run view --json jobs`, not
   estimated from memory.
 
-### Third batch: dbt-utils, used for real
+### Third batch: dbt-utils, tried for real, reverted for a real reason
 
-- `packages.yml` adds `dbt-labs/dbt_utils`. `dim_date.sql` now builds
-  its date spine with `dbt_utils.date_spine()` instead of the
+- Tried `dbt_utils.date_spine()` in `dim_date.sql`, replacing the
   hand-rolled `generate_series` + `CROSS JOIN` it used since step 5 --
   the one model already doing by hand exactly what that macro is built
-  for, so this replaces maintained-by-us code with a
+  for, so this would have replaced maintained-by-us code with a
   tested, community-maintained equivalent, not a token "install the
   package and don't use it."
-- Read the macro's own source (`dbt_packages/dbt_utils/macros/sql/date_spine.sql`)
-  before using it, rather than guessing from its name: `date_spine()`
-  evaluates its start/end date arguments in their own standalone
-  statement at compile time, so they can't be a CTE reference the way
-  the old `with bounds as (...)` pattern used -- switched to scalar
-  subqueries instead.
-- Same sqlfluff limitation as `models/governance/` (ADR 0011): the
-  lightweight jinja templater can't resolve a package macro either.
-  While fixing the exclusion, found `.sqlfluffignore` doesn't support
-  an inline `# comment` after a pattern the way `.gitignore` does -- the
-  first attempt silently failed to exclude anything until the comments
-  were moved onto their own lines.
+- Passed on `dev`: `dbt build --select dim_date` (`PASS=3`) and a full
+  `dbt build --full-refresh` (`PASS=42/43`), with a row count/bounds
+  check (`5063` rows, `2013-01-01` to `2026-11-11`) confirming identical
+  output to the old implementation.
+- **Failed on `dbt build --target ci`** -- the exact command CI's
+  `data-quality` job runs, against `tests/fixtures/eco2mix_sample.csv`
+  (step 7): `upper bound must be positive`. Traced to the fixture's own
+  shape -- all 10 rows on a single day, `2026-01-01` -- which makes
+  `date_spine()`'s internal interval calculation `0`, and its
+  `generate_series` helper rejects a `0` upper bound outright. DuckDB's
+  own native `generate_series` (what the model used before) handles
+  `min_date == max_date` fine, with no such limitation.
+- This is exactly why testing against `dev`'s 14-year warehouse alone
+  wasn't enough: the bug only exists at the *small* end of the data
+  range, which only the `ci` target's deliberately tiny fixture
+  actually exercises. **Reverted** the whole adoption rather than
+  padding the date bounds to dodge the edge case (padding would have
+  changed `dim_date`'s real reported range for every caller, not just
+  the tiny-fixture case) -- removed `packages.yml`, the `dbt deps`
+  steps added to `ci.yml`/`nightly.yml`, and the `.sqlfluffignore`
+  entry the package-macro call had needed.
 
 ### Verification (third batch)
-- `dbt build --select dim_date`: `PASS=3`. Full `dbt build
-  --full-refresh`: `PASS=42/43`, unchanged.
-- Row count/bounds check: `5063` rows, `2013-01-01` to `2026-11-11` --
-  matches the dataset's real range, confirming the swap didn't quietly
-  change what dates end up in the dimension.
-- `sqlfluff lint`: clean, after fixing the ignore-file mistake.
+- Reproduced the CI failure locally first (`dbt build --target ci`),
+  not just read the GitHub Actions log, before deciding to revert.
+- After reverting: `dbt build --target ci` passes again locally;
+  `dbt build --full-refresh` on `dev`: `PASS=42/43`, identical to
+  before this bonus item was attempted.
+- `sqlfluff lint`, `ruff check .`, full `pytest`: all still green.

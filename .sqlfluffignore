@@ -1,10 +1,8 @@
 # The lightweight jinja templater (no live dbt connection) can't resolve
-# custom or third-party package macros -- it would need the heavier
-# `dbt` templater for that, which needs a working profile/connection at
-# lint time. Not worth it for a couple of files.
+# custom macros -- it would need the heavier `dbt` templater for that,
+# which needs a working profile/connection at lint time. Not worth it
+# for one file.
 # models/governance/: calls the custom mask_pii() macro (step 16)
-# models/marts/dim_date.sql: calls dbt_utils.date_spine() (step 18)
 models/governance/
-models/marts/dim_date.sql
 target/
 dbt_packages/

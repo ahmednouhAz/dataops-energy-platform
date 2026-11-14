@@ -1,64 +1,78 @@
-# ADR 0013 — Bonus: dbt-utils, used for real in `dim_date`
+# ADR 0013 — Bonus: tried dbt-utils for real, reverted it for a real reason
 
 ## Decision
-`packages.yml` adds `dbt-labs/dbt_utils` (`>=1.3.0,<2.0.0`, resolved to
-`1.4.1`, pinned in the committed `package-lock.yml`). `dim_date.sql`
-now builds its date spine with `dbt_utils.date_spine()` instead of a
-hand-rolled `generate_series` + `CROSS JOIN`.
+**Not adopted.** `dbt-labs/dbt_utils` was added (`packages.yml`) and
+`dim_date.sql`'s hand-rolled date spine was replaced with
+`dbt_utils.date_spine()`, specifically because `dim_date` was already
+doing by hand exactly what that macro is built for -- the "actually use
+it somewhere real" standard every other bonus item in this project held
+itself to. Reverted after finding a real limitation, not a style
+preference.
 
-## Why this, not a token "add the package and don't use it"
-CLAUDE.md's bonus list names "dbt-utils / dbt-expectations + macros" --
-the value is in actually using a macro somewhere real, not just having
-the package installed. `dim_date` was the one model already doing by
-hand exactly what `dbt_utils.date_spine()` is built for: a day-by-day
-date spine bounded by the actual data range (step 5's own design,
-"not hard-coded"). Swapping in the tested, community-maintained version
-removes code this project would otherwise have to keep correct itself,
-for a mechanism dbt-utils's own test suite already covers.
+## What broke, and where it was found
+`dbt build --target ci` (the exact command CI's `data-quality` job
+runs) failed:
+```
+Compilation Error in model dim_date
+upper bound must be positive
+> in macro default__get_powers_of_two (dbt_utils/macros/sql/generate_series.sql)
+> ... called by macro default__date_spine
+```
+Traced to the shape of `tests/fixtures/eco2mix_sample.csv` (step 7): all
+10 rows are on the same single day, `2026-01-01` -- a deliberately tiny
+fixture, by design, for a fast CI sample. `date_spine()`'s internal
+`get_intervals_between` computes `datediff(min, max, 'day')`, which is
+`0` when the span is a single day; its `generate_series` helper then
+rejects a `0` upper bound outright. DuckDB's own native
+`generate_series(min_date, max_date, interval '1 day')` -- what
+`dim_date` used before, and reverted back to -- handles
+`min_date == max_date` fine (returns exactly one row).
 
-## A real mechanical detail, found by reading the macro's own source before using it
-`date_spine()` evaluates its `start_date`/`end_date` arguments in their
-**own standalone statement** at compile time (internally, via
-`get_intervals_between` → a bare `select {{ datediff(...) }}` query) --
-confirmed by reading `dbt_packages/dbt_utils/macros/sql/date_spine.sql`
-directly rather than guessing from the macro's name. This means the
-bounds can't be a CTE reference from the surrounding query (the old
-`with bounds as (...)` pattern); they have to be self-contained SQL
-expressions. Used scalar subqueries instead:
-`"(select min(date_heure)::date from " ~ ref('int_eco2mix_checked') ~ ")"`.
-Verified this actually produces the same bounds as the old
-implementation (`5063` days, `2013-01-01` to `2026-11-11` -- matching
-the dataset's actual range at the time of the test), not assumed from
-the macro compiling without error.
+**This would not have been caught by testing against the dev
+warehouse alone** (`dev.duckdb` spans 14 years, nowhere near a
+single-day edge case) -- it only surfaced by running the exact command
+CI runs, against the exact fixture CI uses, which is why `dbt build
+--target ci` (not just `dbt build` on `dev`) is part of this project's
+own verification habit for anything that touches a model used by both
+targets.
 
-## A second instance of an already-known sqlfluff limitation
-Same root cause as `models/governance/demo_pii_masking.sql` (ADR 0011):
-the lightweight jinja templater can't resolve a package macro
-(`dbt_utils.date_spine`) any more than it could resolve a custom one.
-Added `models/marts/dim_date.sql` to `.sqlfluffignore` next to the
-existing `models/governance/` entry. Also found, while fixing this,
-that `.sqlfluffignore` doesn't support an inline `# comment` after a
-pattern on the same line the way `.gitignore` does -- it silently
-treated the first attempt's `pattern  # comment` as part of the pattern
-itself, so the exclusion didn't match at all until the comments were
-moved to their own lines above the patterns.
+## Why reverted instead of worked around
+Padding the spine's bounds (e.g. `end_date + 1`) to dodge the zero-span
+case would change `dim_date`'s actual reported date range for every
+caller, not just the tiny-fixture edge case -- trading a real
+correctness property (the dimension's bounds exactly match the real
+data) for compatibility with a third-party macro's own internal
+limitation. The hand-rolled version has no such limitation and needed
+no such workaround. Per this ADR's own opening standard -- use the
+package for something real, or don't add it -- once the one real use
+case didn't hold up, keeping the dependency installed and unused would
+have been worse than not adding it at all.
 
 ## Alternatives rejected
-- Installing dbt-utils without using it anywhere (just to tick the box
-  that the package exists): rejected -- that proves nothing and adds a
-  dependency for no benefit, the opposite of this session's own
-  standard for every other bonus item.
-- Keeping the hand-rolled `generate_series` version and only adding
-  dbt-utils for some *other*, newly-invented model: rejected -- would
-  mean maintaining two ways of doing the same thing (a date spine) in
-  the same project for no reason, when one model was already doing
-  exactly what the package macro replaces.
+- Keep `dbt_utils` installed for *some* future use, unrelated to this
+  specific finding: rejected -- an installed-but-unused dependency is
+  exactly what this project's own standard (ADR 0011, ADR 0012) argues
+  against elsewhere; there's nothing to point to as "the real usage"
+  once `dim_date` reverted.
+- Pad the bounds to avoid the zero-span case (see above): rejected --
+  trades real correctness for compatibility with the macro's own
+  internal limitation.
+- Special-case the fixture (e.g. make `eco2mix_sample.csv` span 2 days
+  instead of 1) to avoid tripping the macro: rejected -- the fixture's
+  shape is a property of step 7's own design (a small, fast, known-
+  reference CI sample), not something to change just to accommodate an
+  unrelated bonus item's dependency.
 
 ## Verification
-- `dbt deps`: installs `dbt_utils` 1.4.1 cleanly.
-- `dbt build --select dim_date`: `PASS=3` (1 table + 2 data tests).
-- `dbt build --full-refresh` (full project): `PASS=42/43`, unchanged.
-- Row count/bounds check (`query.py`): `5063` rows, `2013-01-01` to
-  `2026-11-11` -- consistent with the dataset's real range.
-- `sqlfluff lint models data_tests seeds`: clean, after fixing the
-  `.sqlfluffignore` inline-comment mistake.
+- `dbt build --select dim_date` and full `dbt build --full-refresh` on
+  `dev`: both passed while using `dbt_utils.date_spine()` -- the bug
+  only showed up against the `ci` target's tiny fixture, confirmed by
+  reproducing it locally with the exact command
+  (`dbt build --target ci`) before reverting.
+- After reverting: `dbt build --target ci` passes again locally;
+  `packages.yml`/`package-lock.yml`/`dbt_packages/` removed, the
+  `dbt deps` steps added to `ci.yml`/`nightly.yml` removed (no longer
+  needed), `.sqlfluffignore`'s `dim_date.sql` entry removed (the
+  reverted model has no package-macro call to exclude for).
+- `dbt build --full-refresh` (full project, `dev`): `PASS=42/43`,
+  identical to before this bonus item was attempted.
