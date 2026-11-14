@@ -87,3 +87,22 @@ actually checks to confirm a rollback worked, not just that the
   label: would work, but duplicates information `docker/metadata-action`
   already derives correctly from the git tag -- one more thing to keep
   in sync for no benefit over reading the label Docker already sets.
+
+## Verification (full end-to-end, including a real rollback)
+- `git tag v0.1.0 && git push origin v0.1.0`: `release.yml` ran,
+  published `ghcr.io/ahmednouhaz/dataops-energy-platform:0.1.0` and
+  `:latest`. (First pull attempt used `:v0.1.0` and failed -- the naming
+  mismatch above, found this way.)
+- Bumped the `ruff` pin for real, merged, tagged `v0.1.1`: new image
+  published as `:0.1.1`, `:latest` moved to it (same digest, confirmed
+  with `docker inspect`).
+- Rolled back to `0.1.0` via `docker-compose.prod.yml` (`RELEASE_TAG=0.1.0`,
+  `pull`, `up -d`). Confirmed on the *running container*, not just the
+  command's exit code: `docker inspect dataops-worker-1 --format
+  '{{.Config.Image}}'` → `...energy-platform:0.1.0`; its
+  `org.opencontainers.image.revision` label matched `v0.1.0`'s commit
+  SHA exactly, and differed from `v0.1.1`'s -- two genuinely different
+  builds, not the same image relabeled.
+- Restored the worker to normal dev mode afterward
+  (`docker compose up -d worker`, no override) -- confirmed the running
+  container's image went back to the locally-built `dataops-worker`.

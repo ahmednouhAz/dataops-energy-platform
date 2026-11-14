@@ -1086,3 +1086,91 @@ a new one, and why), `dbt build`, *then* the card. The distinction
 matters: a dashboard change is cheap and reversible; a model change
 needs the same scrutiny (tests, description, a reason not to misuse an
 existing mart) as any other step in this project.
+
+## Step 15 — CD: GHCR releases and rollback (2026-11-14)
+
+### What was done
+- `.github/workflows/release.yml`: on a `v*` tag push (never a plain
+  merge -- publishing is a deliberate act), builds the pipeline image
+  and pushes it to GHCR tagged with the version and `latest`.
+- `docker-compose.prod.yml`: an override swapping `worker`/
+  `metabase-setup` to pull a specific `RELEASE_TAG` instead of building
+  locally.
+- `docs/rollback.md` + `docs/adr/0009-release-and-rollback.md`: the
+  documented procedure, plus everything found while actually running it
+  end to end for real -- not simulated.
+- "Dev vs prod environments" was already satisfied by steps 4/11/12
+  (dbt's `dev`/`prod`/`ci` targets, `PROD_DUCKDB_PATH`/
+  `SERVING_DUCKDB_PATH` vs. the interactive `DUCKDB_PATH`) -- nothing
+  new needed here.
+
+### Three real things found only by actually doing a release and a rollback
+- **Compose can't unset a key from an override file.** Tried removing
+  the dev-mode bind mount (`.:/app`) for a "true" prod topology where an
+  image rollback would roll back code too, not just dependencies.
+  `build: null` and an empty-list `volumes:` override were both tested
+  and confirmed (via `docker compose ... config`) to be silently
+  ignored -- Compose keeps the base file's value regardless. The
+  Compose Specification's actual mechanism for this is the `!reset` YAML
+  tag (`volumes: !reset []`), which *did* work -- but using it properly
+  would have meant a second shared volume and a second set of data-path
+  env vars just for the prod case, real new infrastructure for a
+  project that still deploys to "one desktop running Docker Compose."
+  Documented the honest, simpler tradeoff instead: this rollback rolls
+  back the image's baked *dependencies*; rolling back the *code* too
+  needs a second, explicit `git checkout <tag>` on the host, because the
+  bind mount means the container always runs whatever the host's
+  working tree has checked out.
+- **The git tag and the published image tag don't match.** Pushed
+  `v0.1.0`, `release.yml` reported success, then `docker pull
+  ghcr.io/.../dataops-energy-platform:v0.1.0` failed with `manifest
+  unknown`. Checked the job's own logs rather than guessing:
+  `docker/metadata-action`'s semver pattern strips the leading `v` --
+  the image is actually `:0.1.0`. Not a bug (bare-number image tags are
+  the normal Docker convention), but a real trap documented explicitly
+  now rather than left for the next person to rediscover the same way.
+- **A "trivial" dependency bump can resolve to the exact same installed
+  version.** Bumped `ruff>=0.6` to `ruff>=0.7,<1` to produce a
+  genuinely different `v0.1.1` image for the rollback test -- but both
+  ranges allowed the same latest release (`0.17.5`) at build time, so
+  `pip show ruff` gave an identical answer in both images. The rollback
+  *mechanism* is still proven (the running container's image reference
+  and its `org.opencontainers.image.revision` label both correctly
+  matched the older release, differing from the newer one), but it's a
+  reminder that "I changed a version constraint" doesn't always mean "a
+  different version actually got installed" -- check the resolved
+  version, not just the written constraint, when that distinction
+  matters.
+
+### Verification
+- `v0.1.0` tagged and pushed: published and pulled successfully.
+- `v0.1.1` tagged and pushed (after the real dependency bump): published
+  as `:0.1.1`, `:latest` moved to the same digest.
+- Rolled back to `0.1.0` for real: `docker inspect dataops-worker-1
+  --format '{{.Config.Image}}'` → the `0.1.0` image; its
+  `org.opencontainers.image.revision` label matched `v0.1.0`'s exact
+  commit SHA, differing from `v0.1.1`'s -- two genuinely different
+  builds, confirmed, not assumed from the tag name alone.
+- Restored the worker to normal dev mode afterward and confirmed it was
+  back on the locally-built image.
+
+### Why this matters for the four promises
+- **Reproductible**: "rollback" is now a documented, two-command
+  procedure with a verification step that checks the actual running
+  container, not a hope that `docker compose up` did the right thing.
+- **Reliable**: writing down the bind-mount limitation *honestly*,
+  instead of building a more complex topology to paper over it, is
+  itself a reliability property -- the next person (teacher, jury,
+  future me) won't be surprised by what a rollback actually does and
+  doesn't cover.
+
+### A question the individual exam could ask, answered here
+**"You rolled back to v0.1.0 but the bug is still there. Why?"** Because
+the bug was in the *application code*, and this project's `worker`
+service bind-mounts the live repo for dev convenience (ADR 0005) -- the
+image rollback only rolled back baked *dependencies*. Fixing a code bug
+means `git checkout v0.1.0` (or whichever tag) on the host as well, not
+just redeploying an older image. Confusing "which artifact actually
+changed" is exactly the kind of mistake that costs the most time during
+a live incident -- which is why `docs/rollback.md` spells this out
+explicitly rather than leaving it to be rediscovered under pressure.

@@ -42,9 +42,9 @@ Tick an item only when it is actually done and verified, not when it is started.
 - [x] history loaded by backfill (16,560,648 rows in `fct_energy_production`, >= 1,000,000 rows requirement met -- step 10)
 
 ## Continuous delivery
-- [ ] Docker images published to GHCR on each tag (step 15: `.github/workflows/release.yml` written; not yet confirmed with a real tag push -- see learning_log.md)
+- [x] Docker images published to GHCR on each tag (step 15: tagged `v0.1.0` and `v0.1.1` for real, both published and pulled successfully -- `ghcr.io/ahmednouhaz/dataops-energy-platform`)
 - [x] dev and prod environments (already satisfied by steps 4/11/12: dbt `dev`/`prod`/`ci` targets, `PROD_DUCKDB_PATH`/`SERVING_DUCKDB_PATH` vs. interactive `DUCKDB_PATH`)
-- [ ] documented rollback (step 15: `docs/rollback.md` written; not yet tested for real -- see learning_log.md)
+- [x] documented rollback (step 15: `docs/rollback.md`; rolled back a real running container from `0.1.1` to `0.1.0` and verified via the container's own image + OCI revision label, not just the command's exit code)
 
 ## Observability
 - [x] duration, rows, rejects and freshness in Grafana (via Prometheus) (step 13: `flows/metrics.py` pushes to Pushgateway every run, dashboard `monitoring/grafana/dashboards/energy_platform.json`)

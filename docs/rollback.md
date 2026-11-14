@@ -48,9 +48,29 @@ together means two steps, not one:
 5. If the code also needs to roll back: `git checkout v<that tag>` on
    the host (the "v" prefix comes back for the git tag).
 
-## Tested for real
+## Tested for real (2026-11-14)
 
-See `docs/learning_log.md`'s step 15 entry for the actual tag-push,
-publish, and rollback verification performed after this workflow first
-merged to `main` (a tag can only trigger `release.yml` once that file
-exists on the commit being tagged).
+- Tagged `v0.1.0`, pushed it: `release.yml` ran, published
+  `ghcr.io/ahmednouhaz/dataops-energy-platform:0.1.0` and `:latest`.
+  First pull attempt used `:v0.1.0` (matching the git tag) and failed
+  with `manifest unknown` -- the naming mismatch above, found this way,
+  not assumed.
+- Fixed the docs, bumped a real dependency pin (`ruff`), merged, tagged
+  `v0.1.1`, pushed again: new image published as `:0.1.1`, `:latest`
+  moved to it (confirmed via `docker inspect`, both the same digest).
+- Rolled back: set `RELEASE_TAG=0.1.0`, ran the pull + up commands
+  above. Confirmed on the actual *running* container, not just the pull
+  command's exit code:
+  - `docker inspect dataops-worker-1 --format '{{.Config.Image}}'` ->
+    `ghcr.io/ahmednouhaz/dataops-energy-platform:0.1.0`.
+  - Its `org.opencontainers.image.version` label -> `0.1.0`.
+  - Its `org.opencontainers.image.revision` label -> the exact commit
+    SHA `v0.1.0` was tagged from, different from `v0.1.1`'s -- proof
+    these are genuinely two different builds, not the same image
+    relabeled.
+  - The `ruff` version installed in both images turned out identical
+    (`0.17.5`) -- the bump (`>=0.6` to `>=0.7,<1`) didn't change which
+    version `pip` resolved to, since both ranges allowed the same
+    latest release at build time. The *mechanism* is still verified by
+    the revision label; a real rollback would show up the same way for
+    any change that actually pins a different resolved version.
