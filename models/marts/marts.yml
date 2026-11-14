@@ -3,37 +3,57 @@ version: 2
 models:
   - name: dim_region
     description: One row per mainland France region, with the city/lat/lon used for the Open-Meteo calls.
+    # Model contract (step 18 bonus): locks this mart's column names,
+    # types, and order -- a model that no longer matches exactly fails
+    # to build, loudly, instead of silently changing shape under a
+    # downstream reader (the dashboard, a future consumer). Only applied
+    # to marts with an explicit column list already (not eco2mix_rejected,
+    # which deliberately passes through `select *` -- see ADR 0012).
+    config:
+      contract:
+        enforced: true
     columns:
       - name: code_insee_region
         description: INSEE region code, e.g. '75' for Nouvelle-Aquitaine. Primary key.
+        data_type: varchar
         data_tests:
           - unique
           - not_null
       - name: region_name
         description: Region name, without accents (seeds/regions.csv was written that way to avoid CSV/encoding issues).
+        data_type: varchar
         data_tests:
           - not_null
       - name: representative_city
         description: The city whose coordinates stand in for the whole region in the weather calls.
+        data_type: varchar
       - name: latitude
         description: Latitude of representative_city, decimal degrees.
+        data_type: double
       - name: longitude
         description: Longitude of representative_city, decimal degrees.
+        data_type: double
 
   - name: dim_energy_source
     description: The 6 production sources eco2mix reports, with whether each counts as renewable.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: energy_source
         description: Source key as it appears in the eco2mix API (thermique, nucleaire, eolien, solaire, hydraulique, bioenergies). Primary key.
+        data_type: varchar
         data_tests:
           - unique
           - not_null
       - name: label
         description: Human-readable English label for the source.
+        data_type: varchar
         data_tests:
           - not_null
       - name: is_renewable
         description: True for wind/solar/hydro/bioenergy; false for thermal and nuclear.
+        data_type: boolean
         data_tests:
           - not_null
           - accepted_values:
@@ -42,31 +62,44 @@ models:
 
   - name: dim_date
     description: One row per calendar day spanning the eco2mix data currently loaded (grows with the backfill, step 10).
+    config:
+      contract:
+        enforced: true
     columns:
       - name: date_day
         description: The calendar day. Primary key.
+        data_type: date
         data_tests:
           - unique
           - not_null
       - name: year
         description: Calendar year.
+        data_type: bigint
       - name: month
         description: Calendar month (1-12).
+        data_type: bigint
       - name: day
         description: Day of month.
+        data_type: bigint
       - name: day_of_week
         description: Day of week, 0 (Sunday) to 6 (Saturday), DuckDB's extract(dow ...) convention.
+        data_type: bigint
       - name: is_weekend
         description: True for Saturday/Sunday.
+        data_type: boolean
 
   - name: fct_energy_production
     description: >
       One row per region x timestamp x energy source, in MW. The big
       incremental fact table: only timestamps newer than what's already
       loaded are (re)computed on each run.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: code_insee_region
         description: Foreign key to dim_region.
+        data_type: varchar
         data_tests:
           - not_null
           - relationships:
@@ -75,10 +108,12 @@ models:
                 field: code_insee_region
       - name: date_heure
         description: The half-hour (definitive dataset) or 15-minute (real-time dataset) timestamp, UTC.
+        data_type: timestamp with time zone
         data_tests:
           - not_null
       - name: energy_source
         description: Foreign key to dim_energy_source.
+        data_type: varchar
         data_tests:
           - not_null
           - relationships:
@@ -87,6 +122,7 @@ models:
                 field: energy_source
       - name: production_mw
         description: Production from this source, in MW, for this region and timestamp.
+        data_type: double
         data_tests:
           - not_null
 
@@ -94,9 +130,13 @@ models:
     description: >
       One row per region x hour: average electricity consumption alongside
       the weather observed for that region's representative city.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: code_insee_region
         description: Foreign key to dim_region.
+        data_type: varchar
         data_tests:
           - not_null
           - relationships:
@@ -105,10 +145,12 @@ models:
                 field: code_insee_region
       - name: observed_hour
         description: The hour, UTC. eco2mix's finer-grained consumption is averaged up to this grain.
+        data_type: timestamp with time zone
         data_tests:
           - not_null
       - name: consommation_mw_avg
         description: Average electricity consumption in MW over this region/hour.
+        data_type: double
         data_tests:
           - not_null
       - name: ech_physiques_mw_avg
@@ -117,12 +159,16 @@ models:
           RTE's own sign convention: positive means this region is a net
           exporter to the rest of the grid at that hour, negative means
           it's a net importer (depends on other regions to meet demand).
+        data_type: double
       - name: temperature_c
         description: Hourly temperature in Celsius, from Open-Meteo, for this region's representative city.
+        data_type: double
       - name: wind_speed_kmh
         description: Hourly wind speed in km/h.
+        data_type: double
       - name: cloud_cover_pct
         description: Hourly cloud cover, percent.
+        data_type: double
 
   - name: eco2mix_rejected
     description: >
