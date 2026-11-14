@@ -1174,3 +1174,55 @@ just redeploying an older image. Confusing "which artifact actually
 changed" is exactly the kind of mistake that costs the most time during
 a live incident -- which is why `docs/rollback.md` spells this out
 explicitly rather than leaving it to be rediscovered under pressure.
+
+## Step 16 — Governance (2026-11-14)
+
+### What was done
+- Most of this checklist was already satisfied by earlier steps, not
+  new work here: `contracts/*.yaml` have had owner + 10-year retention
+  + a `contains_pii: false`/`pii_note` statement since step 7; gitleaks
+  has run in CI since step 8; lineage has been documented via
+  `dbt docs generate` since step 6, and now includes the step-14
+  dashboard exposure too.
+- What was actually new: `macros/mask_pii.sql` (two techniques --
+  SHA-256 pseudonymization, and partial redaction keeping the last N
+  characters) plus `models/governance/demo_pii_masking.sql` and 2 dbt
+  unit tests proving it works on a known input, even though nothing in
+  this warehouse is personal data and the macro is applied to nothing
+  real. CLAUDE.md's own checklist asks for exactly this: "document it
+  explicitly in the contracts [already done], and show the masking
+  mechanism anyway, e.g. a macro."
+- Verified DuckDB's `sha256()`/`repeat()`/`right()`/`greatest()`
+  functions directly before writing the macro, same empirical habit as
+  every other step this session -- confirmed the macro's SQL would
+  actually run before building a model and tests around it.
+
+### Verification
+- `dbt build --select demo_pii_masking`: `PASS=3` (the view + both unit
+  tests), each unit test checking an exact, independently-computed
+  expected value, not just "it ran without erroring."
+- `dbt build` (full project): `PASS=42/43` (the 1 exposure is a no-op
+  by design), no regressions from adding the new `governance/` model
+  path.
+- `dbt docs generate`: completes, catalog includes the new model.
+
+### Why this matters for the four promises
+- **Reliable**: a governance claim that isn't backed by anything
+  runnable ("we'd mask it if we needed to") is exactly the kind of
+  claim that falls apart the moment someone asks to see it work. This
+  one doesn't, because it's a real macro with a real test, not a
+  sentence in a doc.
+
+### A question the individual exam could ask, answered here
+**"The teacher adds a new source next month with a real email column.
+What changes?"** Three things, in order: (1) the new source's
+`contracts/<source>.yaml` gets `contains_pii: true` and a real
+`pii_note` (not `false`, which would now be a lie); (2) wherever that
+column becomes visible beyond the raw layer (a staging or mart model --
+never raw itself, which stays untouched per CLAUDE.md section 4),
+wrap it with `{{ mask_pii(...) }}`, choosing hash vs. partial redaction
+based on whether anything downstream needs to recognize *which* record
+it is; (3) add a unit test pinning the new column's expected masked
+output, same pattern `models/governance/governance.yml` already
+demonstrates -- the mechanism from this step gets reused, not
+reinvented.

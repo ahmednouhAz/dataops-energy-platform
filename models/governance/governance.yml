@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: demo_pii_masking
+    description: >
+      Demonstrates macros/mask_pii.sql on literal example values (step
+      16, governance). Not applied to any real column -- see
+      contracts/*.yaml's pii_note for why nothing in this warehouse
+      actually needs masking.
+    columns:
+      - name: example_id
+        description: The unmasked literal example input.
+      - name: example_id_masked
+        description: mask_pii(example_id, visible_chars=4) -- partial redaction, last 4 characters visible.
+      - name: example_email
+        description: The unmasked literal example input.
+      - name: example_email_hashed
+        description: mask_pii(example_email) -- full pseudonymization via SHA-256.
+
+unit_tests:
+  - name: test_mask_pii_partial_redaction_keeps_last_n_chars
+    model: demo_pii_masking
+    given: []
+    expect:
+      rows:
+        - {example_id: "1234567890", example_id_masked: "******7890"}
+
+  - name: test_mask_pii_full_hash_is_deterministic_sha256
+    model: demo_pii_masking
+    given: []
+    expect:
+      rows:
+        - {example_email: "alice@example.com", example_email_hashed: "ff8d9819fc0e12bf0d24892e45987e249a28dce836a85cad60e28eaaa8c6d976"}

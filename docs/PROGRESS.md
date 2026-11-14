@@ -53,8 +53,8 @@ Tick an item only when it is actually done and verified, not when it is started.
 
 ## Governance & security
 - [x] gitleaks in CI (`.github/workflows/ci.yml`, parallel `gitleaks` job)
-- [ ] personal data masked (document explicitly: our data has no personal data; show the masking mechanism anyway)
-- [ ] owner + retention in each contract; documented lineage
+- [x] personal data masked (step 16: documented no-PII in each contract since step 7; `macros/mask_pii.sql` + `models/governance/demo_pii_masking.sql` + 2 unit tests prove the masking mechanism works even though nothing in this warehouse needs it)
+- [x] owner + retention in each contract (since step 7); documented lineage (`dbt docs generate`, including the step-14 exposure)
 
 ## Consumption
 - [x] a dashboard (Metabase or Evidence) answering the 3 business questions, reading only from the marts (step 14: Metabase + community DuckDB driver -- Evidence's self-host path has no local-DuckDB-file connector, found while trying it; see ADR 0008). Declared as a dbt exposure (`models/exposures.yml`).
