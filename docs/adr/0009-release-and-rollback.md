@@ -44,6 +44,20 @@ considered:
    actual architecture, not a workaround that hides what bind-mounting
    for dev convenience actually costs.
 
+## A real naming mismatch, found by actually pulling the published image
+`docker pull ghcr.io/.../dataops-energy-platform:v0.1.0` (matching the
+git tag exactly) failed with `manifest unknown` right after `release.yml`
+reported success. Checked the job's own logs rather than guessing:
+`docker/metadata-action`'s `type=semver,pattern={{version}}` strips the
+leading `v` -- the image was actually pushed as `:0.1.0`, which pulled
+fine. Not a bug to fix (bare-number tags are the normal Docker
+convention; keeping the `v` would be the non-standard choice), but a
+real trap for whoever runs the rollback procedure by hand: the git tag
+and the image tag are off by one character, in a way that fails
+silently different ways (`docker pull` says "unknown", not "did you mean
+0.1.0"). `docs/rollback.md` and `.env.example` now say this explicitly
+rather than letting the next person discover it the same way.
+
 ## Why `release.yml` is a separate workflow, not a job added to `ci.yml`
 `ci.yml` runs on every PR and every push to `main` -- if the release job
 lived there, every ordinary merge would attempt a GHCR push (and either
